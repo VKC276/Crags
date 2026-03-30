@@ -2468,13 +2468,15 @@ function showToast(message, duration = 3000) {
 
 function openCommentCardFromEl(el) {
   const text = el.getAttribute("data-comment");
+  const name = el.querySelector('.ps-2 span')?.innerText || "Okänd led";
 
   if (!text || text.trim() === "") return;
 
+  document.getElementById("commentRouteName").innerText = name;
   document.getElementById("commentText").innerText = text;
 
   const overlay = document.getElementById("commentOverlay");
-  overlay.style.display = "flex"; // 👈 viktigt!
+  overlay.style.display = "flex"; // centrering med flex
 }
 
 function closeCommentCard() {
@@ -2502,11 +2504,15 @@ function closeCommentCard() {
 
 <div id="commentOverlay"
      style="position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-            display: none; z-index: 9999; /* högre än allt annat */
-            justify-content: center; align-items: center;"
+            display: none; z-index: 9999; justify-content: center; align-items: center;"
      onclick="closeCommentCard()">
 
-  <div id="commentCard" style="background: white; border-radius: 12px; padding: 16px 18px; width: 85%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative; z-index: 10000;" onclick="event.stopPropagation()">
+  <div id="commentCard"
+       style="background: white; border-radius: 12px;
+              padding: 16px 18px; width: 85%; max-width: 400px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative;
+              z-index: 10000;"
+       onclick="event.stopPropagation()">
 
     <!-- STÄNG KNAPP -->
     <button onclick="closeCommentCard()"
@@ -2516,13 +2522,16 @@ function closeCommentCard() {
       ✕
     </button>
 
+    <!-- LEDENS NAMN -->
+    <div id="commentRouteName" class="fw-bold mb-1" style="font-size: 1rem; text-align: center;"></div>
+
     <!-- RUBRIK -->
-    <div class="text-muted mb-2" style="font-size: 0.7rem;">
-      Kommentar
+    <div class="text-muted mb-2" style="font-size: 0.7rem; text-align: center;">
+      Comments
     </div>
 
-    <!-- TEXT -->
-    <div id="commentText" class="small"></div>
+    <!-- KOMMENTAR TEXT -->
+    <div id="commentText" class="small" style="text-align: left;"></div>
 
   </div>
 </div>
