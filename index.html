@@ -2467,16 +2467,19 @@ function showToast(message, duration = 3000) {
 }
 
 function openCommentCardFromEl(el) {
-  const text = el.getAttribute("data-comment");
+  // Hämta ledens namn direkt från raden (inte startnummer)
   const name = el.querySelector('.ps-2 span')?.innerText || "Okänd led";
+  const text = el.getAttribute("data-comment");
 
   if (!text || text.trim() === "") return;
 
+  // Sätt rubrik till ledens namn
   document.getElementById("commentRouteName").innerText = name;
   document.getElementById("commentText").innerText = text;
 
+  // Visa modal
   const overlay = document.getElementById("commentOverlay");
-  overlay.style.display = "flex"; // centrering med flex
+  overlay.style.display = "flex";
 }
 
 function closeCommentCard() {
@@ -2522,12 +2525,12 @@ function closeCommentCard() {
       ✕
     </button>
 
-    <!-- LEDENS NAMN -->
-    <div id="commentRouteName" class="fw-bold mb-1" style="font-size: 1rem; text-align: Left;"></div>
+    <!-- LEDENS NAMN (rubrik) -->
+    <div id="commentRouteName" class="fw-bold mb-1 text-center" style="font-size: 1rem;"></div>
 
     <!-- RUBRIK -->
-    <div class="text-muted mb-2" style="font-size: 0.7rem; text-align: Left;">
-      Comments
+    <div class="text-muted mb-2 text-center" style="font-size: 0.7rem;">
+      Comment
     </div>
 
     <!-- KOMMENTAR TEXT -->
