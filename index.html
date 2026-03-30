@@ -797,26 +797,50 @@ function openCrag(id, query = "") {
   }
 
   return `
-    <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light" style="${isMatch ? 'background-color: #e8f5e9;' : ''}">
+     <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light"
+       style="${isMatch ? 'background-color: #e8f5e9;' : ''}">
+    
+    <!-- VÄNSTER: Startnummer + namn -->
+    <div class="ps-2 d-flex align-items-center">
+      ${r.StartOrder ? 
+        `<span class="badge rounded-pill bg-primary me-2 d-flex justify-content-center align-items-center" 
+               style="width: 20px; height: 20px; font-size: 0.7rem; flex-shrink: 0;">
+          ${r.StartOrder}
+        </span>` 
+        : ''
+      }
       
-      <div class="ps-2 d-flex align-items-center">
-        ${r.StartOrder ? 
-          `<span class="badge rounded-pill bg-primary me-2 d-flex justify-content-center align-items-center" 
-                 style="width: 20px; height: 20px; font-size: 0.7rem; flex-shrink: 0;">${r.StartOrder}</span>` 
-          : ''
+      <span class="${isMatch ? 'fw-bold text-success' : ''}">
+        ${r.Namn}
+      </span>
+    </div>
+
+    <!-- HÖGER: Kommentar + grad + typ -->
+    <div class="pe-2 d-flex align-items-center">
+      
+      <div class="d-flex align-items-center gap-2 text-end me-2">
+        
+        <!-- Kommentar -->
+        ${r.Kommentar && r.Kommentar.trim() !== "" 
+          ? `<span class="text-muted small fst-italic">(${r.Kommentar.trim()})</span>` 
+          : ""
         }
-        <span class="${isMatch ? 'fw-bold text-success' : ''}">${r.Namn}</span>
+
+        <!-- Grad -->
+        <span class="badge ${isMatch ? 'bg-success' : 'bg-secondary'} opacity-75"
+              style="font-size: 0.7rem;">
+          ${r.Grad}
+        </span>
+
+        <!-- Typ -->
+        ${typeLabel}
       </div>
 
-      <div class="pe-2 d-flex align-items-center">
-        <div class="text-end me-2">
-          <span class="badge ${isMatch ? 'bg-success' : 'bg-secondary'} opacity-75" style="font-size: 0.7rem;">${r.Grad}</span>
-          ${typeLabel}
-        </div>
-        <i class="bi bi-chevron-right text-muted" style="font-size: 0.8rem;"></i>
-      </div>
+      <!-- Pil -->
+      <i class="bi bi-chevron-right text-muted" style="font-size: 0.8rem;"></i>
+    </div>
 
-    </div>`;
+  </div>`;
 }).join('') : '<div class="small text-muted ps-2 italic">Inga leder inlagda än.</div>'}
         </div>
       </div>`;
