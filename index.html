@@ -407,8 +407,8 @@
     let __sessionToken = null;
 
     function apiCall_(action, args) {
-      if (!GAS_API_URL || GAS_API_URL.includes("https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec")) {
-        return Promise.reject(new Error("Missing GAS_API_URL (https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec)."));
+      if (!GAS_API_URL || GAS_API_URL.includes("PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE")) {
+        return Promise.reject(new Error("Missing GAS_API_URL (paste your Apps Script Web App URL)."));
       }
 
       const payload = {
