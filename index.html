@@ -487,7 +487,21 @@ let currentUser = { authorized: false, role: null, username: null };
     window.onload = () => {
       google.script.run
         .withSuccessHandler(data => {
+          if (!data || data.success === false) {
+            console.error("Ogiltigt backend-svar:", data);
+            hideLoadingScreen();
+            showToast("⚠️ Backend svarade med fel.");
+            const list = document.getElementById('list-container');
+            if (list) {
+              list.innerHTML = `<div class="text-center mt-5 text-muted small">${(data && data.msg) ? data.msg : 'No data returned.'}</div>`;
+            }
+            return;
+          }
+
           db = data;
+          if (!Array.isArray(db.locations)) db.locations = [];
+          if (!Array.isArray(db.blocks)) db.blocks = [];
+          if (!Array.isArray(db.problems)) db.problems = [];
           renderList(db.locations);
           setTimeout(initMap, 500);
         })
@@ -505,6 +519,13 @@ let currentUser = { authorized: false, role: null, username: null };
 
     // 2. KARTA
 function initMap() {
+  if (!db || !Array.isArray(db.locations)) {
+    console.error("initMap avbröts: db.locations saknas", db);
+    hideLoadingScreen();
+    showToast("⚠️ Appdata saknas från backend.");
+    return;
+  }
+
   const vastervik = { lat: 57.7512, lng: 16.6321 };
 // Känn av om det är en mobil enhet (bredd under 768px eller touch-enhet)
   const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
@@ -2427,7 +2448,7 @@ function showToast(message, duration = 3000) {
 }
   </script>
 
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEENXcN06LUX9yp5Y7RaGVm3O3AYOsCW4&libraries=marker&v=weekly"></script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEENXcN06LUX9yp5Y7RaGVm3O3AYOsCW4&libraries=marker&v=weekly&loading=async"></script>
 <div id="image-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:3000; overflow:auto; -webkit-overflow-scrolling:touch;">
   
   <div id="modal-zoom-wrapper" style="min-height:100vh; display:flex; align-items:center; justify-content:center;">
