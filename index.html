@@ -401,14 +401,14 @@
      * - Your backend is now an Apps Script Web App JSON API.
      *
      * After deploying the Apps Script as a Web App, paste its URL below:
-     *   https://script.google.com/macros/s/<id>/exec
+     *   https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec
      *********************************************************************/
-    const GAS_API_URL = "PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec";
     let __sessionToken = null;
 
     function apiCall_(action, args) {
-      if (!GAS_API_URL || GAS_API_URL.includes("PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE")) {
-        return Promise.reject(new Error("Missing GAS_API_URL (paste your Apps Script Web App URL)."));
+      if (!GAS_API_URL || GAS_API_URL.includes("https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec")) {
+        return Promise.reject(new Error("Missing GAS_API_URL (https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec)."));
       }
 
       const payload = {
