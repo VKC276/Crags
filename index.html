@@ -403,11 +403,11 @@
      * After deploying the Apps Script as a Web App, paste its URL below:
      *   https://script.google.com/macros/s/<id>/exec
      *********************************************************************/
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec";
+    const GAS_API_URL = "PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE";
     let __sessionToken = null;
 
     function apiCall_(action, args) {
-      if (!GAS_API_URL || GAS_API_URL.includes("https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec")) {
+      if (!GAS_API_URL || GAS_API_URL.includes("PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE")) {
         return Promise.reject(new Error("Missing GAS_API_URL (paste your Apps Script Web App URL)."));
       }
 
@@ -421,7 +421,10 @@
 
       return fetch(GAS_API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json; charset=UTF-8" },
+        // Use text/plain to avoid CORS preflight against Apps Script Web Apps.
+        // Body still contains JSON and backend parser reads postData.contents.
+        headers: { "Content-Type": "text/plain; charset=UTF-8" },
+        redirect: "follow",
         body: JSON.stringify(payload)
       }).then(async (r) => {
         return r.json();
@@ -482,11 +485,22 @@ let currentUser = { authorized: false, role: null, username: null };
 
     // 1. STARTA APPEN
     window.onload = () => {
-      google.script.run.withSuccessHandler(data => {
-        db = data;
-        renderList(db.locations);
-        setTimeout(initMap, 500);
-      }).getAppData();
+      google.script.run
+        .withSuccessHandler(data => {
+          db = data;
+          renderList(db.locations);
+          setTimeout(initMap, 500);
+        })
+        .withFailureHandler(err => {
+          console.error("Kunde inte hämta appdata:", err);
+          hideLoadingScreen();
+          showToast("⚠️ Kunde inte nå backend. Kontrollera GAS_API_URL/CORS.");
+          const list = document.getElementById('list-container');
+          if (list) {
+            list.innerHTML = '<div class="text-center mt-5 text-muted small">Backend not reachable.</div>';
+          }
+        })
+        .getAppData();
     };
 
     // 2. KARTA
