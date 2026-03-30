@@ -2468,7 +2468,8 @@ function showToast(message, duration = 3000) {
 
 function openCommentCardFromEl(el) {
   // Hämta ledens namn direkt från raden (inte startnummer)
-  const name = el.querySelector('.ps-2 span')?.innerText || "Okänd led";
+
+const name = el.querySelector('.ps-2 span:last-child')?.innerText || "Okänd led";
   const text = el.getAttribute("data-comment");
 
   if (!text || text.trim() === "") return;
@@ -2526,10 +2527,10 @@ function closeCommentCard() {
     </button>
 
     <!-- LEDENS NAMN (rubrik) -->
-    <div id="commentRouteName" class="fw-bold mb-1 text-center" style="font-size: 1rem;"></div>
+    <div id="commentRouteName" class="fw-bold mb-1 text-left" style="font-size: 1rem;"></div>
 
     <!-- RUBRIK -->
-    <div class="text-muted mb-2 text-center" style="font-size: 0.7rem;">
+    <div class="text-muted mb-2 text-left" style="font-size: 0.7rem;">
       Comment
     </div>
 
