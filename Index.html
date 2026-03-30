@@ -1,0 +1,2432 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* GRUNDSTIL (Behållen) */
+    body { font-family: -apple-system, sans-serif; background: #f8f9fa; height: 100vh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
+    .scroll-area { flex-grow: 1; overflow-y: auto; position: relative; height: 100%; }
+    #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; }
+    
+    /* NYTT: SVÄVANDE SÖKFÄLT (Ersätter gamla .header) */
+    .floating-search-wrapper {
+        position: absolute;
+        top: 15px;
+        left: 0;
+        right: 0;
+        padding: 0 15px;
+        z-index: 1100; /* Högre än kartan */
+        pointer-events: none;
+    }
+    .search-box {
+        background: white;
+        height: 50px;
+        border-radius: 15px;
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        pointer-events: auto;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    .search-icon { margin-right: 10px; color: #888; }
+    .clear-btn { background: none; border: none; color: #ccc; font-size: 1.2rem; cursor: pointer; padding: 0 5px; }
+
+/* Admin-knappen i sökfältet */
+.admin-trigger {
+  padding: 5px 10px;
+  opacity: 0.3; /* Väldigt diskret */
+  cursor: pointer;
+  border-left: 1px solid #eee;
+  font-size: 0.9rem;
+  transition: opacity 0.3s;
+}
+
+.admin-trigger:hover {
+  opacity: 1;
+}
+
+/* Uppdaterad Bottom Nav för bara 2 knappar */
+.modern-nav {
+  position: fixed;
+  bottom: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%; /* Lite smalare och nättare nu när det bara är två */
+  max-width: 320px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  height: 60px;
+  display: flex;
+  border-radius: 30px; /* Mer rundad "pill"-form */
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  z-index: 2000;
+  padding: 5px;
+}
+
+/* Grundstilen för knapparna */
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 25px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  padding: 10px;
+  background: transparent !important; /* Tvinga bort bakgrund som standard */
+  color: #666 !important;             /* Grå text som standard */
+}
+
+/* Denna del styr vad som händer när knappen får klassen 'active' */
+#nav-map.active, #nav-list.active {
+  background-color: #ffffff !important; /* Vit "piller"-platta */
+  color: #0d6efd !important;             /* Blå text/ikon */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12) !important;
+  transform: translateY(-2px);           /* Liten lyft-effekt */
+}
+
+/* Se till att även labels följer med i färgbytet */
+.nav-item.active .nav-label {
+  color: #0d6efd !important;
+  font-weight: 800;
+}
+
+/* Om du vill ha en diskret hover-effekt på den som inte är vald */
+.nav-item:not(.active):hover {
+  background: rgba(0,0,0,0.03) !important;
+}
+.nav-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+    /* CRAG CARDS & STATUS (Behållen) */
+    .crag-card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #eee; cursor: pointer; }
+    .status-badge { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    .bg-g { background: #28a745; } .bg-y { background: #ffc107; } .bg-r { background: #dc3545; }
+
+    /* DETAIL PANEL (Behållen) */
+    #panel { position: fixed; bottom: -100%; left: 0; right: 0; height: 85vh; background: #fff; 
+             transition: 0.4s cubic-bezier(0, 0.5, 0.5, 1); z-index: 2050; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.15); }
+    #panel.open { bottom: 0; }
+    .panel-header { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: #fff; border-radius: 20px 20px 0 0; }
+    .type-label { font-size: 0.75rem; color: #666; font-weight: bold; text-transform: uppercase; margin-left: 5px; }
+    .route-item { border-bottom: 1px solid #f1f1f1; padding: 10px 0; }
+    
+    /* ADMIN & LOGIN (Behållen) */
+    #app-admin { display: none; background: #f1f3f5; color: #212529 !important; height: 100%; overflow-y: auto; padding-bottom: 100px; }
+   
+#app-admin { 
+    display: none; 
+    background: #000000 !important; /* Tvinga kolsvart bakgrund */
+    color: #ffffff; 
+    height: 100%; 
+    overflow-y: auto; 
+    padding: 20px 15px 100px 15px; 
+}
+    
+/* 1. Rubriker som ligger direkt på den svarta admin-bakgrunden */
+#app-admin h4, 
+#app-admin h5, 
+#app-admin h6 {
+    color: #ffffff !important;
+}
+
+/* 2. Rubriker som ligger INUTI vita kort (Överskriver regeln ovan) */
+#app-admin .card h4, 
+#app-admin .card h5, 
+#app-admin .card h6,
+#app-admin .card .text-dark {
+    color: #212529 !important; /* Mörkgrå/Svart för läsbarhet på vitt */
+}
+
+/* 3. Extra tydlighet för labels inuti vita kort */
+#app-admin .card label {
+    color: #6c757d !important; /* Grå text-muted stil för labels inuti kort */
+}
+#app-admin .btn-link {
+    color: #0d6efd !important; /* En klar blå färg */
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.9rem;
+    padding: 0;
+    transition: color 0.2s;
+}
+
+#app-admin .btn-link:hover {
+    color: #3d8bfd !important; /* Lite ljusare blå vid hover */
+    text-decoration: underline;
+}
+
+    /* LOGIN PANEL MÖRK (Behållen) */
+    #login-panel { background: #212529; color: white; padding: 20px; }
+    #new-admin-name, #new-admin-user, #new-admin-pw { color: white !important; background-color: #1a1a1a !important; }
+
+    /* TOAST (Behållen) */
+    #global-toast {
+        position: fixed; top: 20px; right: -300px; background: #ffc107; color: #000;
+        padding: 15px 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 9999; transition: right 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        display: flex; align-items: center; font-weight: bold; border-left: 5px solid #000;
+    }
+    #global-toast.show { right: 20px; }
+
+    /* INPUTS & SEARCH (Behållen/Optimerad) */
+    #mainSearch { background-color: #ffffff !important; color: #212529 !important; border: none !important; width: 100%; }
+    ::placeholder { color: #adb5bd !important; opacity: 1; }
+    
+    /* Fokus-effekt (Behållen men justerad för sökboxen) */
+    .search-box:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1); }
+
+    #app-admin .form-control, 
+#app-admin .form-select,
+#app-admin input.form-control {
+    background-color: #ffffff !important;
+    color: #212529 !important;
+    border: 1px solid #ced4da !important;
+    opacity: 1 !important;
+}
+
+/* Fixa placeholder-texten så den syns mot den vita bakgrunden */
+#app-admin .form-control::placeholder {
+    color: #adb5bd !important;
+    opacity: 1 !important;
+}
+
+/* --- FIX FÖR KNAPPAR I ADMIN-PANELEN --- */
+
+/* 1. När knappen INTE är vald (Svart text på vit/outline bakgrund) */
+#app-admin .btn-outline-danger {
+    color: #000000 !important; 
+    background-color: #ffffff !important;
+    border: 2px solid #dc3545 !important; /* Lite tjockare ram gör den tydligare */
+    opacity: 1 !important;
+}
+
+/* 2. När knappen ÄR vald (Vit text på röd bakgrund) */
+#app-admin .btn-check:checked + .btn-outline-danger {
+    color: #ffffff !important;
+    background-color: #dc3545 !important;
+    font-weight: 900 !important;
+    box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4) !important;
+}
+
+/* 3. Samma fix för den blå Parkerings-knappen (för att slippa grå text där med) */
+#app-admin .btn-outline-primary {
+    color: #000000 !important;
+    background-color: #ffffff !important;
+    border: 2px solid #0d6efd !important;
+    opacity: 1 !important;
+}
+
+#app-admin .btn-check:checked + .btn-outline-primary {
+    color: #ffffff !important;
+    background-color: #0d6efd !important;
+    font-weight: 900 !important;
+    box-shadow: 0 4px 8px rgba(13, 110, 253, 0.4) !important;
+}
+
+/* 4. Ta bort Bootstraps "hover"-effekt som kan göra texten grå när man håller musen över */
+#app-admin .btn-outline-danger:hover, 
+#app-admin .btn-outline-primary:hover {
+    color: #000000 !important;
+    background-color: #f8f9fa !important;
+}
+</style>
+
+
+</head>
+<body>
+
+<div id="loading-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #1a1a1a; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.5s ease-out;">
+    
+    <img src="https://lh3.googleusercontent.com/d/1zPi2uQydUsda-gASs09SLg7F0YhkZi5o=s400" 
+         alt="ClimbR Logo" 
+         style="max-width: 180px; height: auto; margin-bottom: 5px; animation: pulse 2s infinite ease-in-out;">
+    <div style="text-center margin-top: 5px;">
+        <div style="font-size: 1.85rem; letter-spacing: 1px; text-transform: uppercase; color: white;">Crags</div>
+    </div>
+
+
+    <div style="text-align: center; color: #aaaaaa; margin-top: 20px;">
+        <div class="spinner-border spinner-border-sm text-light mb-2" role="status"></div>
+        <div style="font-size: 0.85rem; letter-spacing: 1px; text-transform: uppercase;">Loading...</div>
+    </div>
+</div>
+
+<style>
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.9; }
+}
+
+
+/* Admin-knappen i sökfältet */
+.admin-trigger {
+  padding: 5px 10px;
+  opacity: 0.3; /* Väldigt diskret */
+  cursor: pointer;
+  border-left: 1px solid #eee;
+  font-size: 0.9rem;
+  transition: opacity 0.3s;
+}
+
+.admin-trigger:hover {
+  opacity: 1;
+}
+
+
+
+</style>
+
+
+<div id="app-public" style="height: 100%; position: relative; overflow: hidden;">
+  
+  <div class="floating-search-wrapper">
+  <div class="search-box shadow">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
+    <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
+    
+    <div class="admin-trigger" onclick="toggleAdmin(true)">
+      ⚙️
+    </div>
+  </div>
+</div>
+
+  <div id="view-map" style="height: 100%; width: 100%;">
+    <div id="map-canvas" style="height: 100%;"></div>
+  </div>
+  
+  <div id="view-list" style="display: none; height: 100%; overflow-y: auto; padding: 90px 15px 100px 15px; background: #f8f9fa;">
+    <div id="list-container">Loading...</div>
+  </div>
+
+<nav class="modern-nav">
+  <div id="nav-map" class="nav-item active" onclick="switchView('map')">
+    <span class="nav-icon">📍</span>
+    <span class="nav-label">MAP</span>
+  </div>
+  <div id="nav-list" class="nav-item" onclick="switchView('list')">
+    <span class="nav-icon">📜</span>
+    <span class="nav-label">LIST</span>
+  </div>
+</nav>
+</div>
+
+<div id="login-panel" style="position: fixed; top: 0; left: -100%; width: 100%; height: 100%; background: #1a1a1a; z-index: 99999; transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column;">
+    
+    <div class="p-3 border-bottom border-secondary d-flex justify-content-between align-items-center">
+        <button onclick="closeLoginPanel()" class="btn btn-sm btn-outline-light border-0">✕ Avbryt</button>
+        <span class="text-white-50 small fw-bold text-uppercase">Admin Login</span>
+        <div style="width:50px;"></div>
+    </div>
+
+    <div class="flex-grow-1 d-flex justify-content-center align-items-center px-4">
+        <div style="width: 100%; max-width: 320px;" class="text-center">
+            
+            <div class="mb-5">
+              <img src="https://lh3.googleusercontent.com/d/1zPi2uQydUsda-gASs09SLg7F0YhkZi5o=s400" 
+                   style="max-width:160px; height:auto; filter: drop-shadow(0 0 10px rgba(255,255,255,0.1));" 
+                   onerror="this.src='https://placehold.co/140x60/1a1a1a/white?text=climbR'">
+            </div>
+
+            <div class="mb-3 text-start">
+                <label class="text-white-50 small mb-1 ms-1 fw-bold text-uppercase"></label>
+                <input type="text" id="admin-user" 
+                       class="form-control form-control-lg bg-dark text-white border-secondary shadow-sm" 
+                       placeholder="Skriv användarnamn..." 
+                       tabindex="1"
+                       style="border-radius: 10px; font-size: 0.95rem; padding: 12px 15px;">
+            </div>
+
+            <div class="mb-4 text-start">
+                <label class="text-white-50 small mb-1 ms-1 fw-bold text-uppercase"></label>
+                <input type="password" id="admin-pw" 
+                       class="form-control form-control-lg bg-dark text-white border-secondary shadow-sm" 
+                       placeholder="Lösenord" 
+                       tabindex="2"
+                       style="border-radius: 10px; font-size: 0.95rem; padding: 12px 15px;">
+            </div>
+
+            <button onclick="checkLogin()" id="login-btn" 
+                    class="btn btn-primary btn-lg w-100 shadow fw-bold py-2 mb-3" 
+                    style="border-radius: 10px; letter-spacing: 0.5px;">
+                Logga in
+            </button>
+
+            <div id="login-error" class="alert alert-danger py-2 small border-0 shadow-sm" style="display:none; border-radius: 10px; background: rgba(220, 53, 69, 0.1); color: #ff6b6b;">
+                🚫 Fel inloggningsuppgifter.
+            </div>
+
+        </div>
+    </div>
+</div>
+
+  <div id="app-admin" class="p-3" style="display: none; position: absolute; top: 0; left: 0; width: 100%; min-height: 100%; background: #1a1a1a; z-index: 1000;">
+    <div class="d-flex justify-content-between mb-4">
+      <h5>Workbench</h5>
+      <div>
+      <button class="btn btn-sm btn-outline-light" onclick="toggleAdmin(false)">Stäng</button>
+      <button class="btn btn-sm btn-outline-danger me-2" onclick="logoutAdmin()">Logga ut</button>
+    </div>
+    </div>
+
+    <div id="admin-main"></div>
+  </div>
+
+  <div id="panel">
+    <div class="panel-header">
+      <h5 id="panel-title" class="m-0"></h5>
+      <button class="btn-close" onclick="closePanel()"></button>
+    </div>
+    <div class="p-3" style="overflow-y: auto; height: calc(100% - 60px);" id="panel-body"></div>
+  </div>
+
+
+
+
+  <script>
+    /**********************************************************************
+     * GAS -> GitHub Pages bridge
+     * - Replaces `google.script.run` (GAS web app binding) with fetch()
+     * - Your backend is now an Apps Script Web App JSON API.
+     *
+     * After deploying the Apps Script as a Web App, paste its URL below:
+     *   https://script.google.com/macros/s/<id>/exec
+     *********************************************************************/
+    const GAS_API_URL = "PASTE_YOUR_DEPLOYED_WEBAPP_URL_HERE";
+    let __sessionToken = null;
+
+    function apiCall_(action, args) {
+      if (!GAS_API_URL || GAS_API_URL.includes("https://script.google.com/macros/s/AKfycbxqte2r9lHhbuWRAU66cXyrrloTYkdwnh-ysXShBHHno_9DKTU83ykKJniQbIBVZQlp/exec")) {
+        return Promise.reject(new Error("Missing GAS_API_URL (paste your Apps Script Web App URL)."));
+      }
+
+      const payload = {
+        action,
+        token: __sessionToken || "",
+        // In `google.script.run`, the function arguments are passed as an array.
+        // We keep the same shape here so the backend can dispatch consistently.
+        args: args || []
+      };
+
+      return fetch(GAS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=UTF-8" },
+        body: JSON.stringify(payload)
+      }).then(async (r) => {
+        return r.json();
+      });
+    }
+
+    // Emulate the small subset of `google.script.run` that your UI uses.
+    function createRunProxy_() {
+      let successHandler = null;
+      let failureHandler = null;
+      const proxy = new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            if (prop === "withSuccessHandler") {
+              return (fn) => {
+                successHandler = fn;
+                return proxy;
+              };
+            }
+            if (prop === "withFailureHandler") {
+              return (fn) => {
+                failureHandler = fn;
+                return proxy;
+              };
+            }
+
+            return (...args) => {
+              apiCall_(String(prop), args)
+                .then((res) => {
+                  // Store session token after successful login.
+                  if (String(prop) === "verifyAdminPassword" && res && res.token) {
+                    __sessionToken = res.token;
+                  }
+                  if (successHandler) successHandler(res);
+                })
+                .catch((err) => {
+                  if (failureHandler) failureHandler(err);
+                });
+            };
+          }
+        }
+      );
+      return proxy;
+    }
+
+    // Ensure we don't clobber `google.maps` loaded by the Maps script.
+    window.google = window.google || {};
+    window.google.script = window.google.script || {};
+    window.google.script.run = createRunProxy_();
+
+let currentUser = { authorized: false, role: null, username: null };
+
+
+    let db = { locations: [], blocks: [], problems: [] };
+    let map;
+    let markers = [];
+
+    // 1. STARTA APPEN
+    window.onload = () => {
+      google.script.run.withSuccessHandler(data => {
+        db = data;
+        renderList(db.locations);
+        setTimeout(initMap, 500);
+      }).getAppData();
+    };
+
+    // 2. KARTA
+function initMap() {
+  const vastervik = { lat: 57.7512, lng: 16.6321 };
+// Känn av om det är en mobil enhet (bredd under 768px eller touch-enhet)
+  const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
+
+  map = new google.maps.Map(document.getElementById("map-canvas"), {
+    zoom: 9, 
+    center: vastervik, 
+    mapId: "4504f8b373a348fd",
+    mapTypeId: 'terrain',
+    // DYNAMISK KONTROLL:
+    // Om det är mobil (isMobile = true), dölj allt. Annars visa standard.
+    disableDefaultUI: isMobile, 
+    
+    // Du kan fortfarande tvinga vissa inställningar oavsett enhet:
+    gestureHandling: 'greedy', // Gör det lättare att navigera med ett finger på mobil
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    panControl: false,
+    zoomControl: false // Inga +/- knappar på skärmen
+
+
+  });
+
+  markers = [];
+  // Använd den nya funktionen i loopen
+  db.locations.forEach(loc => createMarker(loc));
+  
+  hideLoadingScreen();
+}
+
+    // 3. LISTA & SÖK
+    function renderList(locations) {
+      const container = document.getElementById('list-container');
+      const q = document.getElementById('mainSearch').value.toLowerCase().trim();
+
+      if (!locations || locations.length === 0) {
+        container.innerHTML = '<div class="text-center mt-5 text-muted small">No matches...</div>';
+        return;
+      }
+
+      container.innerHTML = locations.map(loc => {
+        let detailText = loc.AccessText ? loc.AccessText.substring(0, 45) + "..." : "Show details";
+        if (q !== "") {
+          const sectorBlocks = db.blocks.filter(b => String(b.CragID) === String(loc.ID));
+          const matchCount = db.problems.filter(p => {
+            const isMyBlock = sectorBlocks.some(b => String(b.ID) === String(p.BlockID));
+            return isMyBlock && (p.Namn.toLowerCase().includes(q) || p.Grad.toLowerCase().startsWith(q));
+          }).length;
+          if (matchCount > 0) detailText = `🎯 ${matchCount} matchin routes`;
+        }
+
+        return `
+          <div class="crag-card shadow-sm border-0 mb-2 p-3 bg-white rounded" onclick="openCrag('${loc.ID}', '${q}')" style="cursor:pointer;">
+            <div class="d-flex align-items-center">
+              <span class="status-badge bg-${String(loc.Status).toLowerCase()}"></span>
+              <div class="flex-grow-1">
+                <div class="fw-bold" style="color:#333;">${loc.Namn}</div>
+                <div class="small text-muted" style="font-size: 0.75rem;">${detailText}</div>
+              </div>
+              <div class="text-muted small">❯</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+
+// Funktion för att skapa EN markör på kartan
+function createMarker(loc) {
+  if (!loc.Lat_Sektor || !loc.Lng_Sektor) return null;
+
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    map: map,
+    position: { lat: Number(loc.Lat_Sektor), lng: Number(loc.Lng_Sektor) },
+    title: loc.Namn,
+  });
+
+  marker.locId = loc.ID;
+  marker.addListener("gmp-click", () => openCrag(loc.ID));
+  
+  markers.push(marker); // Lägg till i den globala arrayen
+  return marker;
+}
+
+// Funktion för att uppdatera hela appen med en ny plats
+function addLocationToApp(newLoc) {
+  // 1. Lägg till i den lokala db-variabeln
+  db.locations.push(newLoc);
+  
+  // 2. Skapa markören på kartan direkt
+  createMarker(newLoc);
+  
+  // 3. Rendera om listan så den nya cragen syns där också
+  renderList(db.locations);
+  
+  console.log("Ny crag tillagd live:", newLoc.Namn);
+}
+
+function switchView(view) {
+  const isMap = (view === 'map');
+  
+  // 1. Växla vyerna
+  document.getElementById('view-map').style.display = isMap ? 'block' : 'none';
+  document.getElementById('view-list').style.display = isMap ? 'none' : 'block';
+  
+  // 2. Växla "active"-klassen på de NYA ID-namnen
+  const navMap = document.getElementById('nav-map');
+  const navList = document.getElementById('nav-list');
+  
+  if (navMap && navList) {
+    navMap.classList.toggle('active', isMap);
+    navList.classList.toggle('active', !isMap);
+  }
+}
+
+  
+
+function filterData() {
+  closePanel();
+
+  // 🔹 Söksträng (alltid lowercase)
+  const q = String(document.getElementById('mainSearch').value || "").toLowerCase().trim();
+
+  // 🔹 Bygg lookup-tabeller
+  const blocksByCrag = {};
+  db.blocks.forEach(b => {
+    const cragId = b.CragID;
+    const blockId = b.ID;
+    if (!blocksByCrag[cragId]) blocksByCrag[cragId] = [];
+    blocksByCrag[cragId].push(blockId);
+  });
+
+  const problemsByBlock = {};
+  db.problems.forEach(p => {
+    const blockId = p.BlockID;
+    if (!problemsByBlock[blockId]) problemsByBlock[blockId] = [];
+    problemsByBlock[blockId].push(p);
+  });
+
+  // 🔹 Filtrera locations
+  let filteredLocations = db.locations;
+
+  if (q !== "") {
+    filteredLocations = db.locations.filter(loc => {
+      const locName = (loc.Namn || "").toLowerCase();
+      if (locName.includes(q)) return true;
+
+      const blockIds = blocksByCrag[loc.ID] || [];
+
+      for (let blockId of blockIds) {
+        const problems = problemsByBlock[blockId] || [];
+
+        for (let p of problems) {
+          const name = (p.Namn || "").toLowerCase();
+          const grade = (p.Grad || "").toLowerCase();
+          const type = (p.Typ || "").toLowerCase(); // 🔹 ny Typ-matchning
+
+          if (name.includes(q) || grade.startsWith(q) || type.includes(q)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    });
+  }
+
+  renderList(filteredLocations);
+
+  // 🔹 Uppdatera markers på kartan
+  if (markers && markers.length > 0) {
+    const filteredIds = new Set(filteredLocations.map(f => f.ID));
+
+    markers.forEach(marker => {
+      const isMatch = filteredIds.has(marker.locId);
+      marker.map = isMatch ? map : null;
+
+      if (isMatch) {
+        google.maps.event.clearListeners(marker, 'gmp-click');
+        marker.addListener("gmp-click", () => openCrag(marker.locId, q));
+      }
+    });
+  }
+}
+
+
+    // 4. ÖPPNA SEKTOR (DETALJER)
+function openCrag(id, query = "") {
+  const q = query.toLowerCase().trim();
+  const loc = db.locations.find(l => String(l.ID).trim() === String(id).trim());
+  if (!loc) return;
+
+  document.getElementById('panel-title').innerText = loc.Namn;
+  const cragBlocks = db.blocks.filter(b => String(b.CragID).trim() === String(id).trim());
+  
+  // --- ACCESS INFO ---
+  let accessHtml = "";
+  const status = String(loc.Status).toUpperCase();
+  if (status !== 'G') {
+    let alertClass = (status === 'R') ? "alert-danger" : "alert-warning";
+    accessHtml = `<div class="alert ${alertClass} shadow-sm mb-3 fw-bold small">⚠️ Accessinfo: ${loc.AccessText || ''}</div>`;
+  } else if (loc.AccessText) {
+    accessHtml = `<div class="p-2 mb-3 border-start border-4 border-success bg-light small">${loc.AccessText}</div>`;
+  }
+
+  // --- NAVIGATIONSLÄNKAR ---
+  let navHtml = `
+    <div class="mb-4 p-3 rounded shadow-sm border" style="background: #f8f9fa;">
+      <div class="small fw-bold text-uppercase text-muted mb-2" style="font-size:0.6rem;">Find the crag</div>
+      <div class="d-grid gap-2">
+        <button onclick="startInternalNav('${loc.ID}')" class="btn btn-sm btn-outline-danger d-flex justify-content-between align-items-center">
+          <span>📍 Approach Guide</span>
+          <span class="badge bg-danger">In app</span>
+        </button>
+        
+        ${loc.ParkingLat ? `
+        <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.ParkingLat},${loc.ParkingLng}&travelmode=driving" target="_blank" class="btn btn-sm btn-primary d-flex justify-content-between align-items-center text-white">
+          <span>🅿️ Drive to parking</span>
+          <span style="font-size:10px;">Opens maps ↗️</span>
+        </a>` : ''}
+      </div>
+    </div>`;
+
+  let html = accessHtml + navHtml;
+
+  // --- RENDER BLOCK & LEDER ---
+  cragBlocks.forEach(block => {
+    const routes = db.problems
+      .filter(p => String(p.BlockID).trim() === String(block.ID).trim())
+      .sort((a, b) => String(a.StartOrder || '99').localeCompare(String(b.StartOrder || '99'), undefined, {numeric: true}));
+    
+    let imgHtml = "";
+    if (block.DriveID && block.DriveID !== "") {
+      const imgUrl = "https://lh3.googleusercontent.com/d/" + block.DriveID;
+      imgHtml = `
+        <div class="mb-3 text-center">
+          <img src="${imgUrl}" 
+               class="img-fluid rounded shadow-sm border border-secondary" 
+               style="max-height: 350px; width: 100%; object-fit: cover; cursor: pointer;" 
+               onclick="openImageModal('${imgUrl}')"
+               onerror="this.parentElement.style.display='none'">
+          <div class="text-muted mt-1" style="font-size: 0.65rem;">Klicka för fullskärm</div>
+        </div>`;
+    }
+
+    html += `
+      <div class="mb-5">
+        <div class="bg-light p-2 rounded border mb-2 d-flex justify-content-between align-items-center shadow-sm">
+          <span class="small fw-bold text-uppercase text-muted">${block.Namn}</span>
+          <span class="badge bg-secondary opacity-50 fw-normal" style="font-size:0.6rem;">${block.Typ || ''}</span>
+        </div>
+        
+        ${imgHtml}
+
+        <div class="ps-1">
+         ${routes.length > 0 ? routes.map(r => {
+ const isMatch = q !== "" && (
+  r.Namn.toLowerCase().includes(q) || 
+  r.Grad.toLowerCase().includes(q) || 
+  (r.Typ || "").toLowerCase().trim().includes(q)
+);
+  
+  // Vi kollar både Typ och typ för att vara helt säkra
+  const displayTyp = r.Typ || r.typ || ""; 
+
+  let typeLabel = "";
+  if (displayTyp) {
+    typeLabel = `<div class="text-muted text-uppercase" style="font-size: 0.55rem; margin-top: 1px; font-weight: 600; letter-spacing: 0.3px;">${displayTyp}</div>`;
+  }
+
+  return `
+    <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light" style="${isMatch ? 'background-color: #e8f5e9;' : ''}">
+      
+      <div class="ps-2 d-flex align-items-center">
+        ${r.StartOrder ? 
+          `<span class="badge rounded-pill bg-primary me-2 d-flex justify-content-center align-items-center" 
+                 style="width: 20px; height: 20px; font-size: 0.7rem; flex-shrink: 0;">${r.StartOrder}</span>` 
+          : ''
+        }
+        <span class="${isMatch ? 'fw-bold text-success' : ''}">${r.Namn}</span>
+      </div>
+
+      <div class="pe-2 d-flex align-items-center">
+        <div class="text-end me-2">
+          <span class="badge ${isMatch ? 'bg-success' : 'bg-secondary'} opacity-75" style="font-size: 0.7rem;">${r.Grad}</span>
+          ${typeLabel}
+        </div>
+        <i class="bi bi-chevron-right text-muted" style="font-size: 0.8rem;"></i>
+      </div>
+
+    </div>`;
+}).join('') : '<div class="small text-muted ps-2 italic">Inga leder inlagda än.</div>'}
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('panel-body').innerHTML = html;
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('panel-body').scrollTop = 0;
+}
+
+
+    function closePanel() { document.getElementById('panel').classList.remove('open'); }
+
+    // 5. ADMIN LOGIK
+  let isAdminLoggedIn = false; // Håller koll på om vi är inloggade
+
+function toggleAdmin(show) {
+  const publicView = document.getElementById('app-public');
+  const adminView = document.getElementById('app-admin');
+
+  if (show) {
+    if (isAdminLoggedIn) {
+      publicView.style.setProperty('display', 'none', 'important');
+      adminView.style.setProperty('display', 'block', 'important');
+      if (typeof renderAdminHome === "function") renderAdminHome();
+    } else {
+      openLoginPanel();
+    }
+  } else {
+    // Gå tillbaka till publika vyn
+    adminView.style.setProperty('display', 'none', 'important');
+    publicView.style.setProperty('display', 'flex', 'important'); // Viktigt med flex här!
+  }
+}
+
+function openLoginPanel() {
+  console.log("Försöker öppna login-panelen...");
+  const panel = document.getElementById('login-panel');
+  const pwInput = document.getElementById('admin-pw');
+  
+  if (!panel) {
+    console.error("FEL: Hittade inte elementet #login-panel i HTML-koden!");
+    return;
+  }
+
+  // Rensa gammalt tjafs
+  pwInput.value = '';
+  document.getElementById('login-error').style.display = 'none';
+
+  // Aktivera animationen
+  panel.style.left = '0';
+  
+  // Fokusera på rutan efter att den glidit in
+  setTimeout(() => pwInput.focus(), 500);
+}
+
+function closeLoginPanel() {
+  document.getElementById('login-panel').style.left = '-100%';
+}
+
+function openLoginPanel() {
+  document.getElementById('login-panel').style.left = '0';
+  document.getElementById('admin-pw').value = '';
+}
+
+function closeLoginPanel() {
+  document.getElementById('login-panel').style.left = '-100%';
+}
+
+function checkLogin() {
+  const userInput = document.getElementById('admin-user');
+  const pwInput = document.getElementById('admin-pw');
+  const btn = document.getElementById('login-btn');
+  const error = document.getElementById('login-error');
+  
+  if (!userInput || !pwInput || !btn) return;
+  
+  const user = userInput.value.trim();
+  const pw = pwInput.value.trim();
+
+  if (!user || !pw) {
+    showToast("⚠️ Fyll i både användarnamn och lösenord.");
+    return;
+  }
+
+  // 1. Starta snurran
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Verifierar...';
+  error.style.display = 'none';
+
+// --- HÄR STARTAR NÖDBROMSEN ---
+  const timeoutSafety = setTimeout(function() {
+    if (btn.disabled) { // Om knappen fortfarande är låst efter 10 sekunder
+      btn.disabled = false;
+      btn.innerHTML = 'Logga in';
+      error.style.display = 'block';
+      error.innerHTML = "⚠️ Anslutningen tog för lång tid. Kontrollera internet eller försök igen.";
+      console.warn("Inloggningen avbröts av timeout (10s)");
+    }
+  }, 10000); 
+  // --- SLUT PÅ NÖDBROMS ---
+
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      // 2. ÅTERSTÄLL ALLTID KNAPPEN HÄR (så den inte snurrar för evigt)
+      btn.disabled = false;
+      btn.innerHTML = 'Logga in';
+      
+      console.log("SERVER-SVAR:", res);
+      
+      if (res && res.authorized) {
+        currentUser = res; 
+        isAdminLoggedIn = true;
+        // Stäng login-panelen
+        const loginPanel = document.getElementById('login-panel');
+        if (loginPanel) loginPanel.style.left = '-100%';
+
+        setTimeout(function() {
+          document.getElementById('app-public').style.setProperty('display', 'none', 'important');
+          const adminApp = document.getElementById('app-admin');
+          
+          if (adminApp) {
+            adminApp.style.setProperty('display', 'block', 'important');
+            if (res.firstLogin) {
+              renderForcePasswordChange(); 
+            } else {
+              renderAdminHome(); 
+            }
+          }
+        }, 300);
+      } else {
+        // 3. Om lösenordet var fel
+        error.style.display = 'block';
+        error.innerHTML = "🚫 Fel användarnamn eller lösenord.";
+        pwInput.value = ''; // Rensa lösenordsfältet för nytt försök
+      }
+    })
+    .withFailureHandler(function(err) {
+      // 4. ÅTERSTÄLL ÄVEN VID KRITISKT SERVERFEL
+      btn.disabled = false;
+      btn.innerHTML = 'Logga in';
+      error.style.display = 'block';
+      error.innerHTML = "⚠️ Serverfel: " + err;
+    })
+    .verifyAdminPassword(user, pw);
+}
+
+
+function handlePasswordChange() {
+  const p1 = document.getElementById('new-pw1').value;
+  const p2 = document.getElementById('new-pw2').value;
+  const btn = document.getElementById('change-pw-btn');
+  const error = document.getElementById('pw-change-error');
+
+  // 1. Återställ felmeddelanden
+  error.style.display = 'none';
+  error.innerHTML = '';
+
+  // 2. Kontrollera att fälten inte är tomma
+  if (!p1 || !p2) {
+    error.innerHTML = "⚠️ Båda fälten måste fyllas i.";
+    error.style.display = 'block';
+    return;
+  }
+
+  // 3. Kontrollera minimilängd (valfritt men rekommenderat)
+  if (p1.length < 6) {
+    error.innerHTML = "⚠️ Lösenordet måste vara minst 6 tecken.";
+    error.style.display = 'block';
+    return;
+  }
+
+  // 4. DENNA KOLL ÄR VIKTIGAST: Matcha fälten
+  if (p1 !== p2) {
+    error.innerHTML = "❌ Lösenorden matchar inte. Försök igen.";
+    error.style.display = 'block';
+    
+    // Markera fälten röda för användaren (valfritt)
+    document.getElementById('new-pw1').classList.add('border-danger');
+    document.getElementById('new-pw2').classList.add('border-danger');
+    return;
+  }
+
+  // Om allt är OK - gå vidare till servern
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sparar...';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        currentUser.firstLogin = false;
+        document.getElementById('app-admin').innerHTML = '';
+        renderAdminHome();
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = "SPARA OCH LOGGA IN";
+        error.innerHTML = "🚫 Fel vid sparande: " + (res.msg || "Serverfel");
+        error.style.display = 'block';
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = "SPARA OCH LOGGA IN";
+      error.innerHTML = "⚠️ Kritiskt fel: " + err;
+      error.style.display = 'block';
+    })
+    .finalizeUserPassword(currentUser.username, p1);
+}
+
+
+
+function renderForcePasswordChange() {
+  const adminApp = document.getElementById('app-admin');
+  adminApp.innerHTML = `
+    <div class="container d-flex justify-content-center align-items-center" style="min-height: 70vh;">
+      <div class="card bg-dark text-white border-info shadow-lg" style="max-width: 400px; width: 100%;">
+        <div class="card-body p-4 text-center">
+          <h4 class="text-info mb-3">Välj nytt lösenord</h4>
+          <p class="small text-white-50 mb-4">Detta är din första inloggning. Välj ett personligt lösenord på minst 6 tecken.</p>
+          
+          <input type="password" id="new-pw1" class="form-control bg-dark text-white border-secondary mb-2" placeholder="Nytt lösenord">
+          <input type="password" id="new-pw2" class="form-control bg-dark text-white border-secondary mb-3" placeholder="Upprepa lösenord">
+          
+          <button onclick="handlePasswordChange()" id="change-pw-btn" class="btn btn-info w-100 fw-bold">SPARA OCH LOGGA IN</button>
+          <div id="pw-change-error" class="text-danger small mt-2" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminHome() {
+  console.log("Renderar adminhem för:", currentUser);
+  if (!currentUser || !currentUser.username) {
+    console.error("Ingen användare inloggad!");
+    return;
+  }
+
+  // 1. Hitta huvudbehållaren och se till att den syns
+  const adminApp = document.getElementById('app-admin');
+  adminApp.style.setProperty('display', 'block', 'important');
+
+  // 2. Kontrollera om "admin-main" finns. 
+  // Om den INTE finns (t.ex. efter ett lösenordsbyte där vi rensat allt), 
+  // så måste vi rita upp grundstrukturen med knapparna igen.
+  let container = document.getElementById('admin-main');
+  
+  if (!container) {
+    adminApp.innerHTML = `
+      <div class="d-flex justify-content-between mb-4">
+        <h5 class="text-dark">Workbench</h5>
+        <div>
+          <button class="btn btn-sm btn-outline-danger me-2" onclick="logoutAdmin()">Logga ut</button>
+          <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleAdmin(false)">Stäng</button>
+        </div>
+      </div>
+      <div id="admin-main"></div>
+    `;
+    container = document.getElementById('admin-main');
+  }
+
+  // 3. Logik för knappar (Superadmin-koll)
+  const createBtnHtml = currentUser.role === 'superadmin' 
+    ? `<div class="d-grid gap-2 mb-4">
+         <button class="btn btn-success fw-bold" onclick="renderCreateLocation()">+ SKAPA CRAG</button>
+       </div>` 
+    : '';
+
+  // 4. Bygg listan på sektorer
+  const locationsHtml = (db && db.locations) ? db.locations.map(loc => `
+    <div class="card bg-light text-dark border-secondary mb-2">
+      <div class="card-body p-2 d-flex justify-content-between align-items-center">
+        <div onclick="editCragAdmin('${loc.ID}')" style="cursor:pointer;" class="flex-grow-1 ps-2">
+          <span class="fw-bold text-dark">${loc.Namn}</span>
+          <div class="small text-muted">${db.blocks ? db.blocks.filter(b => String(b.CragID) === String(loc.ID)).length : 0} block</div>
+        </div>
+        <div class="d-flex">
+          <button class="btn btn-sm btn-outline-info ms-2" onclick="renderEditLocation('${loc.ID}')">⚙️</button>
+          ${currentUser.role === 'superadmin' ? 
+            `<button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteLocation('${loc.ID}')">🗑️</button>` : '' 
+          }
+        </div>
+      </div>
+    </div>
+  `).join('') : '';
+
+  const userManagementHtml = (typeof renderUserManagement === "function" && currentUser.role === 'superadmin') 
+    ? renderUserManagement() 
+    : '';
+
+  // 5. Skriv NU bara till admin-main (så knapparna högst upp stannar kvar)
+  container.innerHTML = `
+    ${createBtnHtml}
+    <h6 class="text-muted small mb-2 text-uppercase">Crags</h6>
+    ${locationsHtml}
+    ${userManagementHtml}
+  `;
+}
+
+function renderUserManagement() {
+  if (currentUser.role !== 'superadmin') return ''; 
+
+  return `
+    <div class="card bg-light text-dark border-warning mt-5 mb-4 shadow">
+      <div class="card-header border-warning bg-transparent py-3">
+        <h6 class="m-0 text-warning text-uppercase small fw-bold">Hantera Användare</h6>
+      </div>
+      <div class="card-body">
+        <div class="mb-4 border-bottom border-secondary pb-4">
+           <label class="text-muted small mb-2 text-uppercase fw-bold">Skapa ny administratör</label>
+           <input type="text" id="new-admin-name" class="form-control form-control-sm bg-light text-dark border-secondary mb-2" placeholder="Fullständigt namn">
+           <input type="text" id="new-admin-user" class="form-control form-control-sm bg-light text-dark border-secondary mb-2" placeholder="Användarnamn">
+           <input type="password" id="new-admin-pw" class="form-control form-control-sm bg-light text-dark border-secondary mb-2" placeholder="Lösenord">
+           
+           <select id="new-admin-role" class="form-select form-select-sm bg-light text-dark border-secondary mb-3">
+             <option value="admin">Normal Admin</option>
+             <option value="superadmin">Superadmin</option>
+           </select>
+
+           <button onclick="saveNewAdmin()" id="save-admin-btn" class="btn btn-warning btn-sm w-100 fw-bold">SKAPA KONTO</button>
+        </div>
+
+        <div class="user-list-section">
+          <div onclick="toggleAdminList()" class="d-flex justify-content-between align-items-center" style="cursor:pointer; user-select:none;">
+            <label class="text-muted small text-uppercase fw-bold m-0" style="cursor:pointer;">Befintliga konton</label>
+            <span id="admin-list-arrow" style="transition: transform 0.2s; font-size: 0.8rem; color: #666;">▼</span>
+          </div>
+          
+          <div id="admin-list-wrapper" style="display: none; transition: all 0.3s ease-in-out;">
+            <div id="admin-list-container" class="mt-3">
+               <div class="text-center p-3 text-muted small">
+                 <span class="spinner-border spinner-border-sm"></span> Hämtar lista...
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleAdminList() {
+  const wrapper = document.getElementById('admin-list-wrapper');
+  const arrow = document.getElementById('admin-list-arrow');
+  const container = document.getElementById('admin-list-container');
+
+  const isHidden = wrapper.style.display === 'none';
+
+  if (isHidden) {
+    wrapper.style.display = 'block';
+    arrow.style.transform = 'rotate(180deg)';
+    
+    // Om listan är tom (eller bara innehåller spinnern), hämta data
+    if (container.innerHTML.includes('Hämtar lista...')) {
+      loadAdminList(); 
+    }
+  } else {
+    wrapper.style.display = 'none';
+    arrow.style.transform = 'rotate(0deg)';
+  }
+}
+
+
+function saveNewAdmin() {
+  const nameEl = document.getElementById('new-admin-name');
+  const userEl = document.getElementById('new-admin-user');
+  const pwEl = document.getElementById('new-admin-pw');
+  const roleEl = document.getElementById('new-admin-role'); // Hämta roll-väljaren
+  const btn = document.getElementById('save-admin-btn');
+
+  const name = nameEl.value.trim();
+  const user = userEl.value.trim();
+  const pw = pwEl.value.trim();
+  const role = roleEl ? roleEl.value : 'admin'; // Standard till admin om elementet saknas
+
+  if (!user || !pw) {
+    const originalText = btn.innerHTML;
+    btn.classList.replace('btn-warning', 'btn-danger');
+    btn.innerHTML = "Namn & lösenord krävs!";
+    setTimeout(() => {
+      btn.classList.replace('btn-danger', 'btn-warning');
+      btn.innerHTML = originalText;
+    }, 2000);
+    return;
+  }
+
+  // Spara originalutseendet
+  const originalText = "SKAPA ADMIN-KONTO";
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sparar...';
+
+  google.script.run
+    .withSuccessHandler(res => {
+      // Feedback på knappen vid succé
+      btn.classList.replace('btn-warning', 'btn-success');
+      btn.innerHTML = "✅ Användare skapad!";
+      
+      // Rensa inmatningsfälten
+      nameEl.value = "";
+      userEl.value = "";
+      pwEl.value = "";
+      if (roleEl) roleEl.value = "admin"; // Återställ roll till default
+
+      // Ladda om listan med användare (om funktionen finns)
+      if (typeof loadAdminList === 'function') loadAdminList();
+
+      // Återställ knappen efter 3 sekunder
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.classList.replace('btn-success', 'btn-warning');
+        btn.innerHTML = originalText;
+      }, 3000);
+
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false;
+      btn.classList.replace('btn-warning', 'btn-danger');
+      btn.innerHTML = "❌ Serverfel!";
+      console.error(err);
+      
+      setTimeout(() => {
+        btn.classList.replace('btn-danger', 'btn-warning');
+        btn.innerHTML = originalText;
+      }, 3000);
+    })
+    .createNewAdmin({ 
+      name: name, 
+      username: user, 
+      password: pw, 
+      role: role // NU SKICKAS ROLLEN MED TILL SERVERNS OBJEKT
+    });
+}
+
+
+function loadAdminList() {
+  google.script.run.withSuccessHandler(users => {
+    const container = document.getElementById('admin-list-container');
+    if (!users || users.length === 0) {
+      container.innerHTML = '<div class="small text-muted p-2">Inga andra konton hittades.</div>';
+      return;
+    }
+
+    let html = '<div class="list-group list-group-flush bg-transparent">';
+    users.forEach((u, index) => {
+      const isSelf = u.username === currentUser.username;
+      if (isSelf) return; 
+
+      // VIKTIGT: Här mappar vi rätt
+      const currentId = u.username; // Detta är det unika ID:t (t.ex. nils88)
+      const displayName = u.name;   // Detta är namnet (t.ex. Nils Nilsson)
+
+      html += `
+        <div class="list-group-item bg-transparent border-secondary text-dark px-0 py-3">
+          <div class="d-flex justify-content-between align-items-center" id="row-main-${index}">
+            <div>
+              <div class="fw-bold">${displayName}</div>
+              <div class="small text-muted">${currentId} • ${u.role}</div>
+            </div>
+            <button onclick="showDeleteConfirm(${index})" class="btn btn-outline-danger btn-sm border-0">
+              <i class="bi bi-trash"></i> Ta bort
+            </button>
+          </div>
+
+          <div id="row-confirm-${index}" style="display:none;" class="bg-danger bg-opacity-10 p-2 rounded border border-danger">
+            <div class="small mb-2 text-danger fw-bold text-uppercase" style="font-size:0.7rem;">
+              Bekräfta radering av ${currentId}
+            </div>
+            <div class="d-flex gap-2">
+              <input type="text" id="input-confirm-${index}" 
+                     class="form-control form-control-sm border-danger" 
+                     placeholder="Skriv 'ta bort'"
+                     oninput="validateDeleteText(${index})">
+              
+              <button id="btn-delete-${index}" disabled 
+                      onclick="finalDelete('${currentId}', ${index})"
+                      class="btn btn-danger btn-sm fw-bold">OK</button>
+              
+              <button onclick="hideDeleteConfirm(${index})" class="btn btn-outline-secondary btn-sm">✕</button>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }).getAllAdmins();
+}
+
+function showDeleteConfirm(index) {
+  document.getElementById(`row-main-${index}`).style.display = 'none';
+  document.getElementById(`row-confirm-${index}`).style.display = 'block';
+  document.getElementById(`input-confirm-${index}`).focus();
+}
+
+function hideDeleteConfirm(index) {
+  document.getElementById(`row-main-${index}`).style.display = 'flex';
+  document.getElementById(`row-confirm-${index}`).style.display = 'none';
+  document.getElementById(`input-confirm-${index}`).value = '';
+}
+
+function validateDeleteText(index) {
+  const input = document.getElementById(`input-confirm-${index}`);
+  const btn = document.getElementById(`btn-delete-${index}`);
+  
+  if (!input || !btn) {
+    console.error("Kunde inte hitta input eller knapp för index:", index);
+    return;
+  }
+
+  const text = input.value.toLowerCase().trim();
+  console.log(`Validerar text för rad ${index}: "${text}"`); // Logga vad användaren skriver
+
+  if (text === "ta bort") {
+    btn.disabled = false;
+    btn.classList.replace('btn-danger', 'btn-success'); // Gör den grön om den var röd
+  } else {
+    btn.disabled = true;
+    btn.classList.replace('btn-success', 'btn-danger'); // Tillbaka till röd/standard
+  }
+}
+
+function finalDelete(username, index) {
+  // LOGGA DETTA I WEBBLÄSARENS CONSOLE (F12)
+  console.log("FÖRSÖKER RADERA ANVÄNDARE:");
+  console.log("Användarnamn (skickas till server):", username);
+  console.log("Typ av variabel:", typeof username);
+  console.log("Längd på sträng:", username.length);
+
+  const btn = document.getElementById(`btn-delete-${index}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  }
+
+  google.script.run
+    .withSuccessHandler(res => {
+      console.log("Svar från server:", res);
+      if (res.success) {
+        showToast("Användaren har raderats");
+        loadAdminList(); 
+      } else {
+        alert("Fel från kalkylark: " + res.msg);
+        hideDeleteConfirm(index);
+      }
+    })
+    .withFailureHandler(err => {
+      console.error("Kritiskt anropsfel:", err);
+      alert("Kunde inte nå servern.");
+    })
+    .deleteUserAction(username); 
+}
+
+
+
+
+function handleDeleteClick(routeId, blockId, btn) {
+  // Om knappen redan är i "Bekräfta"-läge, kör raderingen
+  if (btn.getAttribute('data-confirm') === 'true') {
+    executeDelete(routeId, blockId, btn);
+  } else {
+    // Första klicket: Ändra utseende på knappen
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "Bekräfta borttagning";
+    btn.classList.replace('btn-outline-danger', 'btn-danger');
+    btn.setAttribute('data-confirm', 'true');
+
+    // Återställ knappen efter 3 sekunder om användaren ångrar sig
+    setTimeout(() => {
+      if (btn) {
+        btn.innerHTML = originalText;
+        btn.classList.replace('btn-danger', 'btn-outline-danger');
+        btn.removeAttribute('data-confirm');
+      }
+    }, 3000);
+  }
+}
+
+function executeDelete(routeId, blockId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  google.script.run
+    .withSuccessHandler(response => {
+      if (response.success) {
+        // 1. Ta bort leden från vårt lokala minne (db.routes)
+        db.problems = db.problems.filter(r => String(r.ID) !== String(routeId));
+
+        // 2. Om blocket också raderades på servern, ta bort det lokalt också
+        if (response.blockDeleted) {
+          db.blocks = db.blocks.filter(b => String(b.ID) !== String(blockId));
+        }
+
+        // 3. Nu ritar vi om vyn med den uppdaterade datan
+        if (typeof renderAdminHome === "function") {
+          renderAdminHome(); 
+        } else {
+          location.reload(); // Fallback
+        }
+      }
+    })
+    .deleteRoute(routeId);
+}
+
+async function renderEditLocation(id) {
+  const loc = db.locations.find(l => String(l.ID) === String(id));
+  const container = document.getElementById('admin-main');
+  
+  container.innerHTML = `
+    <button class="btn btn-sm btn-link p-0 mb-3 text-decoration-none" onclick="renderAdminHome()" style="color: #0d6efd !important; font-weight: bold;">← Tillbaka</button>
+    <h4 class="mb-3 small fw-bold text-uppercase" style="color: #ffffff !important; letter-spacing:1px;">Inställningar: ${loc.Namn}</h4>
+    
+    <div class="card bg-white text-dark border-0 mb-4 shadow mx-0 w-100">
+      <div class="card-body p-3">
+        <label class="small text-muted fw-bold text-uppercase" style="font-size:0.65rem;">Cragens namn</label>
+        <input id="edit-loc-name" type="text" class="form-control bg-white text-dark border-bottom border-top-0 border-start-0 border-end-0 rounded-0 px-0 mb-3 fw-bold" value="${loc.Namn}">
+
+        <div id="edit-map-picker" style="height: 250px; background: #222; border-radius: 8px;" class="mb-3 border-0"></div>
+
+
+        <div class="btn-group w-100 mb-3 shadow-sm">
+          <input type="radio" class="btn-check" name="editMapMode" id="edit-mode-sector" checked>
+          <label class="btn btn-outline-danger py-2 fw-bold" for="edit-mode-sector" style="font-size:0.7rem; text-shadow: 0px 0px 1px rgba(0,0,0,0.2);">📍 FLYTTA CRAG (C)</label>
+          
+          <input type="radio" class="btn-check" name="editMapMode" id="edit-mode-parking">
+          <label class="btn btn-outline-primary py-2 fw-bold" for="edit-mode-parking" style="font-size:0.7rem; text-shadow: 0px 0px 1px rgba(0,0,0,0.2);">🅿️ SÄTT PARKERING (P)</label>
+        </div>
+
+        <div class="row gx-2 mb-3 text-center">
+          <div class="col-6 px-1">
+            <div class="p-2 rounded bg-light border border-danger border-opacity-25">
+              <label class="text-danger fw-bold d-block mb-1" style="font-size:0.6rem;">KOORDINATER CRAG</label>
+              <input id="edit-loc-lat" type="text" class="form-control form-control-sm border-0 bg-transparent p-0 text-center fw-bold" value="${loc.Lat_Sektor || ''}" readonly style="font-size:0.7rem;">
+              <input id="edit-loc-lng" type="text" class="form-control form-control-sm border-0 bg-transparent p-0 text-center fw-bold" value="${loc.Lng_Sektor || ''}" readonly style="font-size:0.7rem;">
+            </div>
+          </div>
+          <div class="col-6 px-1">
+            <div class="p-2 rounded bg-light border border-primary border-opacity-25">
+              <label class="text-primary fw-bold d-block mb-1" style="font-size:0.6rem;">KOORDINATER PARK</label>
+              <input id="edit-loc-plat" type="text" class="form-control form-control-sm border-0 bg-transparent p-0 text-center fw-bold" value="${loc.ParkingLat || ''}" placeholder="Ej satt" readonly style="font-size:0.7rem;">
+              <input id="edit-loc-plng" type="text" class="form-control form-control-sm border-0 bg-transparent p-0 text-center fw-bold" value="${loc.ParkingLng || ''}" placeholder="Ej satt" readonly style="font-size:0.7rem;">
+            </div>
+          </div>
+        </div>
+
+        <label class="small text-muted fw-bold text-uppercase" style="font-size:0.65rem;">Status</label>
+        <select id="edit-loc-status" class="form-select bg-light border-0 mb-3 fw-bold">
+          <option value="G" ${loc.Status==='G'?'selected':''}>Grön (Öppet)</option>
+          <option value="Y" ${loc.Status==='Y'?'selected':''}>Gul (Varning)</option>
+          <option value="R" ${loc.Status==='R'?'selected':''}>Röd (Stängt)</option>
+        </select>
+
+        <label class="small text-muted fw-bold text-uppercase" style="font-size:0.65rem;">Access-info</label>
+        <textarea id="edit-loc-text" class="form-control bg-light border-0 mb-4" rows="2">${loc.AccessText || ''}</textarea>
+
+       <button id="btn-edit-save" class="btn btn-primary btn-lg w-100 fw-bold shadow" 
+        onclick="saveLocationEdit('${loc.ID}')">
+        SPARA ÄNDRINGAR
+</button>
+      </div>
+    </div>
+  `;
+
+  setTimeout(async () => {
+    const mapDiv = document.getElementById("edit-map-picker");
+    if (!mapDiv) return;
+
+    const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker");
+
+    const startPos = loc.Lat_Sektor ? { lat: parseFloat(loc.Lat_Sektor), lng: parseFloat(loc.Lng_Sektor) } : { lat: 57.7512, lng: 16.6321 };
+    
+    const pickerMap = new google.maps.Map(mapDiv, {
+      zoom: 15,
+      center: startPos,
+      mapId: "ADMIN_MAP_PICKER",
+      disableDefaultUI: true,
+      zoomControl: true,
+      mapTypeId: 'terrain'
+    });
+
+    const cragPin = new PinElement({ glyphText: "C", background: "#dc3545", borderColor: "#fff", glyphColor: "#fff" });
+    const parkPin = new PinElement({ glyphText: "P", background: "#0d6efd", borderColor: "#fff", glyphColor: "#fff" });
+
+    // C-markör finns alltid
+    let sMarker = new AdvancedMarkerElement({
+      map: pickerMap,
+      position: startPos,
+      content: cragPin
+    });
+
+    // P-markör skapas, men visas bara om koordinater finns
+    let pMarker = new AdvancedMarkerElement({
+      content: parkPin
+    });
+
+    if (loc.ParkingLat && loc.ParkingLng) {
+      pMarker.position = { lat: parseFloat(loc.ParkingLat), lng: parseFloat(loc.ParkingLng) };
+      pMarker.map = pickerMap;
+    }
+
+    // KLICK-HANTERING
+    pickerMap.addListener("click", (e) => {
+      const pos = e.latLng;
+      if (!pos) return;
+
+      if (document.getElementById('edit-mode-sector').checked) {
+        sMarker.position = pos;
+        document.getElementById('edit-loc-lat').value = pos.lat().toFixed(6);
+        document.getElementById('edit-loc-lng').value = pos.lng().toFixed(6);
+      } else {
+        // Om P inte fanns på kartan, lägg till den nu
+        if (!pMarker.map) pMarker.map = pickerMap;
+        
+        pMarker.position = pos;
+        document.getElementById('edit-loc-plat').value = pos.lat().toFixed(6);
+        document.getElementById('edit-loc-plng').value = pos.lng().toFixed(6);
+      }
+    });
+
+  }, 100);
+}
+
+
+
+
+
+ function editCragAdmin(id) {
+  const loc = db.locations.find(l => String(l.ID) === String(id));
+  const container = document.getElementById('admin-main');
+  
+  // Skapa en lista med ALLA block för flytt-dropdownen
+  const allBlocksDropdown = db.blocks.map(b => {
+    const parentLoc = db.locations.find(l => String(l.ID) === String(b.CragID));
+    return `<option value="${b.ID}">${parentLoc ? parentLoc.Namn : '?' } - ${b.Namn}</option>`;
+  }).join('');
+
+  container.innerHTML = `
+    <button class="btn btn-sm btn-link text-muted p-0 mb-3" onclick="renderAdminHome()">← Tillbaka</button>
+    <h4 class="mb-4">${loc.Namn}</h4>
+    
+    <div class="card bg-light text-dark border-secondary mb-4">
+      <div class="card-body p-3">
+        <h6 class="text-info small fw-bold mb-3">CRAG-STATUS</h6>
+        <select id="adm-status" class="form-select bg-light text-dark border-secondary mb-2">
+          <option value="G" ${loc.Status==='G'?'selected':''}>Grön (Öppet)</option>
+          <option value="Y" ${loc.Status==='Y'?'selected':''}>Gul (Varning)</option>
+          <option value="R" ${loc.Status==='R'?'selected':''}>Röd (Stängt)</option>
+        </select>
+        <textarea id="adm-text" class="form-control bg-light text-dark text-dark border-secondary mb-3" rows="2" placeholder="Accessinformation...">${loc.AccessText || ''}</textarea>
+        <button class="btn btn-primary btn-sm w-100" onclick="saveStatus('${loc.ID}')">Spara CRAG-info</button>
+      </div>
+    </div>
+
+
+ <div class="card bg-light text-dark border-secondary mb-4">
+      <div class="card-body p-3">
+        <h6 class="text-warning small fw-bold mb-3">LÄGG TILL NYTT BLOCK / VÄGG</h6>
+        <div class="mb-3">
+          <label class="text-muted small mb-1">Namn (t.ex. Stora väggen)</label>
+          <input id="adm-block-name" type="text" class="form-control bg-light text-darke border-secondary">
+        </div>
+        <button class="btn btn-warning btn-sm w-100 fw-bold" onclick="saveBlock('${loc.ID}')">Skapa Block</button>
+      </div>
+    </div>
+
+
+  <div class="card bg-light text-dark border-secondary mb-4">
+  <div class="card-body p-3">
+    <h6 class="text-success small fw-bold mb-3">LÄGG TILL NY LED</h6>
+    
+    <div class="mb-2">
+      <label class="text-muted small mb-1">Välj Block</label>
+      <select id="adm-block-id" class="form-select bg-light text-dark border-secondary" oninput="validateForm()">
+        <option value="">-- Välj ett block --</option>
+        ${db.blocks
+          .filter(b => String(b.CragID) === String(id))
+          .map(b => `<option value="${b.ID}">${b.Namn}</option>`)
+          .join('')}
+      </select>
+    </div>
+    
+    <div class="row g-2 mb-2">
+      <div class="col-8">
+        <label class="text-muted small mb-1">Namn på ny led</label>
+        <input id="adm-route-name" oninput="validateForm()" type="text" placeholder="t.ex. Silverlinjen" class="form-control bg-light text-dark border-secondary">
+      </div>
+      <div class="col-4">
+        <label class="text-muted small mb-1">Grad</label>
+        <input id="adm-route-grade" oninput="validateForm()" type="text" placeholder="Grad" class="form-control bg-light text-dark border-secondary">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="text-muted small mb-1">Typ</label>
+      <select id="adm-route-type" class="form-select bg-light text-dark border-secondary">
+        <option value="Boulder">Boulder</option>
+        <option value="Sport">Sport</option>
+        <option value="Trad">Trad</option>
+        <option value="Toprope">Toprope</option>
+      </select>
+    </div>
+<div class="mb-3">
+  <label class="text-muted small mb-1">Kommentar</label>
+  <textarea id="adm-route-comment" 
+    class="form-control bg-light text-dark border-secondary" 
+    rows="2" 
+    placeholder="Kommentar om leden..."></textarea>
+</div>
+    <button id="save-route-btn" class="btn btn-success btn-sm w-100 fw-bold" onclick="saveRoute()" disabled>Spara ny led</button>
+  </div>
+</div>
+
+    <h6 class="text-muted small fw-bold mb-2">BEFINTLIGA LEDER PÅ CRAG</h6>
+    <div id="admin-routes-list"></div>
+  `;
+  
+  const sectorBlockIds = db.blocks.filter(b => String(b.CragID) === String(id)).map(b => b.ID);
+  renderAdminRoutesBySector(sectorBlockIds, allBlocksDropdown);
+}
+
+function validateForm() {
+  const block = document.getElementById('adm-block-id').value;
+  const name = document.getElementById('adm-route-name').value.trim();
+  const grade = document.getElementById('adm-route-grade').value.trim();
+  const btn = document.getElementById('save-route-btn');
+
+  // Om block är valt (inte tomt) OCH namn finns OCH grad finns
+  if (block !== "" && name !== "" && grade !== "") {
+    btn.disabled = false;
+    btn.style.opacity = "1"; // Gör knappen tydlig
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = "0.5"; // Gör knappen lite blekare när den inte går att klicka
+  }
+}
+
+function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
+  const container = document.getElementById('admin-routes-list');
+  
+  const sectorBlocks = db.blocks.filter(b => blockIds.includes(b.ID));
+  
+  if (sectorBlocks.length === 0) {
+    container.innerHTML = '<p class="text-muted small px-2">Inga block skapade än.</p>';
+    return;
+  }
+
+  let html = "";
+  sectorBlocks.forEach(block => {
+    const blockRoutes = db.problems
+        .filter(p => String(p.BlockID) === String(block.ID))
+        .sort((a, b) => String(a.StartOrder).localeCompare(String(b.StartOrder), undefined, {numeric: true}));
+    
+    html += `
+      <div class="card bg-light text-dark border-secondary mb-4 shadow-sm">
+        <div class="card-header bg-black bg-opacity-25 d-flex justify-content-between align-items-center border-secondary py-2">
+          <h6 class="m-0 text-info small fw-bold text-uppercase">${block.Namn}</h6>
+          <button class="btn btn-xs btn-outline-light" style="font-size: 0.7rem;" onclick="triggerUpload('${block.ID}', this)">
+            📸 ${block.DriveID ? 'Byt topo' : 'Lägg till topo'}
+          </button>
+        </div>
+
+        <div class="card-body p-2">
+          ${block.DriveID ? `
+            <div class="text-center mb-3 border-bottom border-secondary pb-2">
+              <img src="https://lh3.googleusercontent.com/d/${block.DriveID}=s400" 
+                   style="max-height:150px; border-radius:4px;" 
+                   class="border border-secondary" 
+                   onerror="this.src='https://placehold.co/100x100/444/aaa?text=Topo+Hittas+Ej'">
+            </div>
+          ` : ''}
+
+          ${blockRoutes.map(r => `
+            <div class="card bg-white border-secondary mb-2 p-2 shadow-sm">
+              <div class="row g-1 mb-2">
+                <div class="col-2">
+                   <label class="text-muted" style="font-size:0.65rem;">NR</label>
+                   <input type="text" class="form-control form-control-sm bg-light text-dark border-secondary text-center fw-bold" 
+                          value="${r.StartOrder || ''}" id="edit-order-${r.ID}" placeholder="#">
+                </div>
+                <div class="col-6">
+                   <label class="text-muted" style="font-size:0.65rem;">NAMN</label>
+                   <input type="text" class="form-control form-control-sm bg-light text-dark border-secondary" value="${r.Namn}" id="edit-name-${r.ID}">
+                </div>
+                <div class="col-4">
+                   <label class="text-muted" style="font-size:0.65rem;">GRAD</label>
+                   <input type="text" class="form-control form-control-sm bg-light text-dark border-secondary" value="${r.Grad}" id="edit-grade-${r.ID}">
+                </div>
+               
+              </div>
+
+
+               <div class="mb-2">
+  <label class="text-muted" style="font-size:0.65rem;">KOMMENTAR</label>
+  <textarea 
+    class="form-control form-control-sm bg-light text-dark border-secondary"
+    id="edit-comment-${r.ID}"
+    rows="2"
+    placeholder="Kommentar...">${r.Kommentar || ""}</textarea>
+</div>
+
+
+              <div class="row g-1 mb-2">
+                <div class="col-12">
+                   <label class="text-muted" style="font-size:0.65rem;">TYP</label>
+                   <select class="form-select form-select-sm bg-light text-dark border-secondary" id="edit-type-${r.ID}">
+                     <option value="Boulder" ${r.Typ === 'Boulder' ? 'selected' : ''}>Boulder</option>
+                     <option value="Sport" ${r.Typ === 'Sport' ? 'selected' : ''}>Sport</option>
+                     <option value="Trad" ${r.Typ === 'Trad' ? 'selected' : ''}>Trad</option>
+                     <option value="Toprope" ${r.Typ === 'Toprope' ? 'selected' : ''}>Toprope</option>
+                   </select>
+                </div>
+              </div>
+              
+              <div class="mb-3">
+                <label class="text-muted" style="font-size:0.65rem;">FLYTTA TILL ANNAT BLOCK</label>
+                <select class="form-select form-select-sm bg-light text-dark border-secondary" id="edit-block-${r.ID}">
+                  ${db.blocks.map(b => {
+                    const parentLoc = db.locations.find(l => String(l.ID) === String(b.CragID));
+                    return `<option value="${b.ID}" ${b.ID == r.BlockID ? 'selected' : ''}>${parentLoc ? parentLoc.Namn : '?' } - ${b.Namn}</option>`;
+                  }).join('')}
+                </select>
+              </div>
+
+              <div class="d-flex justify-content-between align-items-center border-top border-secondary pt-2">
+                <button 
+  id="btn-del-${r.ID}" 
+  type="button" 
+  class="btn btn-outline-danger btn-sm border-0" 
+  onclick="handleDeleteClick('${r.ID}', '${block.ID}', this)">
+  🗑️ Ta bort
+</button>
+                
+                <button class="btn btn-sm btn-primary px-3" onclick="updateRouteData('${r.ID}', this)">
+                  Spara ändring
+                </button>
+              </div>
+            </div>`).join('')}
+            
+            ${blockRoutes.length === 0 ? '<div class="text-muted small italic p-2 text-center">Inga leder på detta block än.</div>' : ''}
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+
+
+
+  function updateRouteData(id, btn) {
+  const originalText = btn.innerHTML;
+  btn.disabled = true; 
+  btn.innerHTML = "Sparar...";
+
+const typeEl = document.getElementById(`edit-type-${id}`);
+const comment = (document.getElementById(`edit-comment-${id}`)?.value || "").trim();
+console.log("TEST 1 (Plus):", 'edit-type-' + id);
+console.log("TEST 2 (Backtick):", `edit-type-${id}`);
+
+  // Hämta värdena, inklusive det nya StartOrder-fältet
+  const data = { 
+    Namn: document.getElementById(`edit-name-${id}`).value, 
+    Grad: document.getElementById(`edit-grade-${id}`).value, 
+    BlockID: document.getElementById(`edit-block-${id}`).value,
+    StartOrder: document.getElementById(`edit-order-${id}`).value,
+    Typ: document.getElementById(`edit-type-${id}`).value,
+    Kommentar: comment
+  };
+
+  google.script.run.withSuccessHandler(res => {
+    if(res.success) {
+      btn.innerHTML = "Klar! ✅"; 
+      btn.className = "btn btn-sm btn-success";
+      
+      const p = db.problems.find(item => String(item.ID) === String(id));
+      if(p) { 
+        p.Namn = data.Namn; 
+        p.Grad = data.Grad; 
+        p.BlockID = data.BlockID; 
+        p.StartOrder = data.StartOrder; // UPPDATERA LOKALT
+        p.Typ = data.Typ;
+        p.Kommentar = data.Kommentar
+      }
+      
+      setTimeout(() => { 
+        btn.disabled = false; 
+        btn.innerHTML = originalText; 
+        btn.className = "btn btn-sm btn-primary"; 
+        // Om vi har bytt block vill vi nog ladda om vyn så leden hamnar under rätt rubrik
+        const currentCragId = db.blocks.find(b => String(b.ID) === String(data.BlockID)).CragID;
+        editCragAdmin(currentCragId);
+      }, 2000);
+    } else {
+      alert("Kunde inte spara: " + (res.msg || "Okänt fel"));
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }).updateRoute(id, data); // Anropar din befintliga updateRoute i Code.gs
+}
+
+    function removeRoute(id, btn) {
+      if(!confirm("Ta bort leden?")) return;
+      btn.disabled = true; btn.innerHTML = "Raderar...";
+      google.script.run.withSuccessHandler(res => {
+        if(res.success) {
+          btn.closest('.card').style.opacity = '0.3'; btn.innerHTML = "Borta 🗑️";
+          db.problems = db.problems.filter(p => String(p.ID) !== String(id));
+        }
+      }).deleteRoute(id);
+    }
+
+    function saveStatus(id) {
+      const btn = event.currentTarget;
+      const s = document.getElementById('adm-status').value;
+      const t = document.getElementById('adm-text').value;
+      btn.disabled = true; btn.innerHTML = "Sparar...";
+      google.script.run.withSuccessHandler(res => {
+        if(res.success) {
+          btn.innerHTML = "Sparat! ✅"; btn.className = "btn btn-success btn-sm w-100";
+          const loc = db.locations.find(l => String(l.ID) === String(id));
+          if(loc) { loc.Status = s; loc.AccessText = t; }
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = "Spara CRAG"; btn.className = "btn btn-primary btn-sm w-100"; }, 2000);
+        }
+      }).updateCragStatus(id, s, t);
+    }
+
+    function saveRoute() {
+  const btn = event.currentTarget;
+
+  // 1. Hämta alla värden från input-fälten först
+  const blockId = document.getElementById('adm-block-id').value;
+  const name = document.getElementById('adm-route-name').value;
+  const grade = document.getElementById('adm-route-grade').value;
+  const type = document.getElementById('adm-route-type').value; // Dubbelkolla att ID:t är adm-route-type i din HTML
+  const comment = document.getElementById('adm-route-comment').value;
+
+  // 2. Skapa ditt data-objekt
+  const data = { 
+    BlockID: blockId, 
+    Namn: name, 
+    Grad: grade, 
+    Typ: type, 
+     Kommentar: comment 
+  };
+
+  // 3. Validera
+ if(!data.Namn || !data.Grad) return showToast("⚠️ Fyll i allt!");
+
+  btn.disabled = true; 
+  btn.innerHTML = "Sparar...";
+
+  // 4. Skicka till Google
+  google.script.run.withSuccessHandler(res => {
+    if(res.success) {
+      btn.innerHTML = "Klar! 🚀";
+      
+      // Lägg till i lokala db (använder db.problems som du skrev)
+      db.problems.push({ ID: res.newId, ...data }); 
+
+      setTimeout(() => { 
+        btn.disabled = false; 
+        btn.innerHTML = "Spara ny led"; 
+        
+        // Hitta vilken sektor (CragID) vi är på för att ladda om admin-vyn
+        const parentBlock = db.blocks.find(b => String(b.ID) === String(data.BlockID));
+        if (parentBlock) {
+          editCragAdmin(parentBlock.CragID);
+        }
+      }, 1500);
+    }
+  }).saveNewRoute(data);
+}
+
+    function saveBlock(cragId) {
+  const btn = event.currentTarget;
+  const name = document.getElementById('adm-block-name').value;
+ 
+
+  if (!name) return showToast("⚠️ Fyll i namn på blocket!");
+
+  btn.disabled = true;
+  btn.innerHTML = "Skapar...";
+
+  google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      // 1. Uppdatera lokala databasen
+      db.blocks.push(res.newBlock);
+      
+      // 2. Ge feedback
+      btn.innerHTML = "Block skapat! 💎";
+      btn.className = "btn btn-outline-warning btn-sm w-100";
+      
+      // 3. Ladda om vyn så att det nya blocket dyker upp i dropdowns
+      setTimeout(() => {
+        editCragAdmin(cragId);
+      }, 1000);
+    }
+  }).saveNewBlock({ CragID: cragId, Namn: name });
+}
+
+async function saveLocationEdit(id) {
+  // 1. Hämta data från formuläret
+  const data = {
+    Namn: document.getElementById('edit-loc-name').value,
+    Lat_Sektor: parseFloat(document.getElementById('edit-loc-lat').value),
+    Lng_Sektor: parseFloat(document.getElementById('edit-loc-lng').value),
+    Status: document.getElementById('edit-loc-status').value,
+    ParkingLat: document.getElementById('edit-loc-plat').value,
+    ParkingLng: document.getElementById('edit-loc-plng').value,
+    AccessText: document.getElementById('edit-loc-text').value
+  };
+
+  // 2. Uppdatera lokalt minne (db.locations)
+  const locIndex = db.locations.findIndex(l => String(l.ID) === String(id));
+  if (locIndex !== -1) {
+    db.locations[locIndex] = { ...db.locations[locIndex], ...data };
+  }
+
+  // 3. UPPDATERA HUVUDKARTAN
+  const marker = markers.find(m => String(m.locId) === String(id));
+  
+  if (marker) {
+    // Flytta positionen (fungerar direkt på marker-objektet)
+    marker.position = { lat: data.Lat_Sektor, lng: data.Lng_Sektor };
+
+    // HÄR ÄR FIXEN: Importera PinElement inuti funktionen
+    const { PinElement } = await google.maps.importLibrary("marker");
+    
+    // Bestäm färg baserat på status
+  //  let pinColor = "#28a745"; // Grön
+    //if (data.Status === 'Y') pinColor = "#ffc107"; // Gul
+    //if (data.Status === 'R') pinColor = "#dc3545"; // Röd
+    
+    // Skapa det nya PinElementet (utan .element för att slippa varningar)
+    const newPin = new PinElement({
+     // background: pinColor,
+     // borderColor: "#fff",
+     // glyphColor: "#fff"
+    });
+    
+    // Uppdatera markörens utseende (behåller gmp-click)
+    marker.content = newPin; 
+  }
+
+  // 4. Spara till Google Sheets via din befintliga funktion
+  if (typeof google !== 'undefined' && google.script) {
+    google.script.run
+      .withSuccessHandler(() => {
+        showToast("Ändringarna har sparats!");
+      })
+      .updateCragFull(id, data);
+  }
+
+  // 5. Gå tillbaka till admin-listan
+  renderAdminHome();
+}
+function deleteLocationAction(id) {
+  if(!confirm("VARNING: Detta raderar cragen och ALLA dess inställningar permanent. Är du säker?")) return;
+  google.script.run.withSuccessHandler(res => {
+    if(res.success) {
+      db.locations = db.locations.filter(l => String(l.ID) !== String(id));
+      renderAdminHome();
+    }
+  }).deleteLocation(id);
+}
+
+
+// Anropa när crag-koordinater sätts via kartan
+function setCragCoordinates(lat, lng) {
+  document.getElementById('new-loc-lat').value = lat;
+  document.getElementById('new-loc-lng').value = lng;
+  validateNewCragForm();
+}
+
+async function renderCreateLocation() {
+  const container = document.getElementById('admin-main');
+  
+  container.innerHTML = `
+    <button class="btn btn-sm btn-link text-muted p-0 mb-3" onclick="renderAdminHome()">← Tillbaka</button>
+    <h4 class="mb-3 text-success small fw-bold text-uppercase">Skapa Ny Crag</h4>
+    
+    <div class="card bg-light text-dark border-secondary mb-4 shadow">
+      <div class="card-body p-3 text-dark">
+        <label class="small text-muted mb-1">Namn på Cragen</label>
+        <input id="new-loc-name" type="text" class="form-control bg-light text-dark border-secondary mb-3" placeholder="t.ex. Dynestad">
+
+        <div id="map-picker" style="height: 250px; background: #222; border-radius: 8px;" class="mb-3 border border-secondary"></div>
+
+        <div class="btn-group w-100 mb-3" role="group">
+          <input type="radio" class="btn-check" name="mapMode" id="mode-sector" checked>
+          <label class="btn btn-outline-danger btn-sm fw-bold" for="mode-sector">📍 Sätt Crag</label>
+          
+          <input type="radio" class="btn-check" name="mapMode" id="mode-parking">
+          <label class="btn btn-outline-primary btn-sm fw-bold" for="mode-parking">🅿️ Sätt Parkering</label>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="text-danger" style="font-size:0.6rem; font-weight:bold;">CRAG (C)</label>
+            <input id="new-loc-lat" type="text" class="form-control form-control-sm bg-light text-dark border-secondary small" placeholder="Lat" readonly>
+            <input id="new-loc-lng" type="text" class="form-control form-control-sm bg-light text-dark border-secondary small mt-1" placeholder="Lng" readonly>
+          </div>
+          <div class="col-6">
+            <label class="text-primary" style="font-size:0.6rem; font-weight:bold;">PARKERING (P)</label>
+            <input id="new-loc-plat" type="text" class="form-control form-control-sm bg-light text-dark border-secondary small" placeholder="Lat" readonly>
+            <input id="new-loc-plng" type="text" class="form-control form-control-sm bg-light text-dark border-secondary small mt-1" placeholder="Lng" readonly>
+          </div>
+        </div>
+
+        <button id="btn-save-new" class="btn btn-success w-100 fw-bold py-2 shadow" onclick="saveNewLocAction()">SKAPA CRAG 🚀</button>
+      </div>
+    </div>
+  `;
+
+  setTimeout(async () => {
+    const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker");
+    const vastervik = { lat: 57.7512, lng: 16.6321 };
+    
+    const pickerMap = new google.maps.Map(document.getElementById("map-picker"), {
+      zoom: 11, 
+      center: vastervik, 
+      disableDefaultUI: true, 
+      zoomControl: true, 
+      mapId: "PICKER_MAP_ID", // KRÄVS för Advanced Markers
+      mapTypeId: 'terrain'
+    });
+
+    // Skapa de två pinnarna (dolda från början tills man klickar)
+    const sMarker = new AdvancedMarkerElement({
+      map: pickerMap,
+      content: new PinElement({ background: "#dc3545", glyphColor: "white", glyph: "C" }).element,
+    });
+
+    const pMarker = new AdvancedMarkerElement({
+      map: pickerMap,
+      content: new PinElement({ background: "#0d6efd", glyphColor: "white", glyph: "P" }).element,
+    });
+
+    // LYSSNARE för klick på kartan
+    pickerMap.addListener("click", (e) => {
+      const pos = e.latLng;
+      
+      if (document.getElementById('mode-sector').checked) {
+        // Flytta C-pinnen
+        sMarker.position = pos;
+        // Uppdatera rätt input-fält (new-loc, inte edit-loc)
+        document.getElementById('new-loc-lat').value = pos.lat().toFixed(6);
+        document.getElementById('new-loc-lng').value = pos.lng().toFixed(6);
+      } else {
+        // Flytta P-pinnen
+        pMarker.position = pos;
+        document.getElementById('new-loc-plat').value = pos.lat().toFixed(6);
+        document.getElementById('new-loc-plng').value = pos.lng().toFixed(6);
+      }
+    });
+  }, 50);
+}
+
+
+function saveNewLocAction() {
+  const name = document.getElementById('new-loc-name').value;
+  const latS = document.getElementById('new-loc-lat').value;
+  const lngS = document.getElementById('new-loc-lng').value;
+  
+  // Validering: Vi kräver åtminstone namn och sektorns koordinater
+  if (!name || !latS || !lngS) {
+    return showToast("Fyll i namn och placering av cragen!")
+  }
+
+  const btn = document.getElementById('btn-save-new');
+  btn.disabled = true; 
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Skapar...';
+
+  const data = {
+    Namn: name,
+    Lat_Sektor: latS,
+    Lng_Sektor: lngS,
+    ParkingLat: document.getElementById('new-loc-plat').value || "",
+    ParkingLng: document.getElementById('new-loc-plng').value || ""
+  };
+
+  // Anropa backend (Code.gs)
+ google.script.run.withSuccessHandler(res => {
+    if (res.success) {
+      // 1. Uppdatera den lokala databasen
+      db.locations.push(res.newLoc);
+      
+      // 2. NYTT: Skapa markören på kartan direkt så den finns där när man växlar vy
+      // Vi använder funktionen vi skapade nyss
+      if (typeof createMarker === 'function') {
+        createMarker(res.newLoc);
+      }
+
+      // 3. NYTT: Uppdatera huvudlistan i bakgrunden
+      renderList(db.locations);
+
+      showToast("Crag skapad!");
+      
+      // Gå tillbaka till admin-listan
+      renderAdminHome();
+    } else {
+      alert("Något gick fel: " + res.msg);
+      btn.disabled = false;
+      btn.innerHTML = "Försök igen";
+    }
+  }).saveNewLocation(data);
+}
+
+
+
+let currentHeading = 0;
+let smoothedHeading = 0;
+const filterFactor = 0.1; // Ju lägre, desto lugnare pil (0.05 - 0.2)
+let watchId = null;
+let userMarker = null;
+
+// Globala variabler för position
+window.targetLat = null;
+window.targetLng = null;
+window.lastUserLat = null;
+window.lastUserLng = null;
+
+function startInternalNav(locId) {
+  const loc = db.locations.find(l => String(l.ID) === String(locId));
+  if (!loc) return;
+
+  window.targetLat = Number(loc.Lat_Sektor);
+  window.targetLng = Number(loc.Lng_Sektor);
+
+  closePanel();
+  switchView('map');
+
+  // iOS behörighet för kompass
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().catch(console.error);
+  }
+
+  // Kompass-lyssnare
+  window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+  window.addEventListener('deviceorientation', handleOrientation, true);
+
+  // Rensa andra markörer
+  markers.forEach(m => m.setMap((m.title === loc.Namn) ? map : null));
+
+  if (navigator.geolocation) {
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition((pos) => {
+      window.lastUserLat = pos.coords.latitude;
+      window.lastUserLng = pos.coords.longitude;
+      
+      const userPos = { lat: window.lastUserLat, lng: window.lastUserLng };
+
+      // Uppdatera blå prick
+      if (!userMarker) {
+        userMarker = new google.maps.Marker({
+          position: userPos,
+          map: map,
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#007AFF", fillOpacity: 1, strokeWeight: 3, strokeColor: "white" }
+        });
+      } else {
+        userMarker.setPosition(userPos);
+        userMarker.setMap(map);
+      }
+
+      const dist = haversineDistance(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
+      
+      // SKAPA/UPPDATERA OVERLAY
+      let infoDiv = document.getElementById('nav-overlay');
+      if(!infoDiv) {
+        infoDiv = document.createElement('div');
+        infoDiv.id = 'nav-overlay';
+        infoDiv.style = "position:fixed; top:85px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); color:#333; padding:10px 20px; border-radius:50px; z-index:2000; font-weight:bold; display:flex; align-items:center; gap:15px; box-shadow:0 8px 25px rgba(0,0,0,0.15); border:1px solid rgba(0,0,0,0.1); width: 90%; max-width: 350px; justify-content: space-between;";
+        document.body.appendChild(infoDiv);
+      }
+
+      // Här använder vi SVG istället för emojis för en renare look
+      infoDiv.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div id="compass-circle" style="width: 50px; height: 50px; background: #0d6efd; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4); transition: transform 0.1s linear;">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </div>
+          <div style="display:flex; flex-direction:column;">
+            <span style="font-size:0.7rem; color:#666; text-transform:uppercase; letter-spacing:1px;">${loc.Namn}</span>
+            <span style="font-size:1.3rem; color:#333; font-weight:900;">${dist}</span>
+          </div>
+        </div>
+        <button onclick="stopNav()" style="border:none; background:#eee; color:#444; border-radius:50%; width:30px; height:30px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+      `;
+      
+      updateCompassRotation();
+
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend(userPos);
+      bounds.extend({lat: window.targetLat, lng: window.targetLng});
+      map.fitBounds(bounds, 80);
+
+    }, null, { enableHighAccuracy: true });
+  }
+}
+
+// FILTER-FUNKTION FÖR MJUKARE KOMPASS
+function handleOrientation(e) {
+  let rawHeading = 0;
+  if (e.webkitCompassHeading) {
+    rawHeading = e.webkitCompassHeading;
+  } else {
+    rawHeading = 360 - e.alpha; 
+  }
+
+  // Hantera hoppet vid 360 grader
+  let diff = rawHeading - smoothedHeading;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+
+  smoothedHeading += diff * filterFactor;
+  smoothedHeading = (smoothedHeading + 360) % 360;
+
+  updateCompassRotation();
+}
+
+function updateCompassRotation() {
+  const compassCircle = document.getElementById('compass-circle');
+  if (!compassCircle || !window.lastUserLat || !window.targetLat) return;
+
+  const toRad = (v) => v * Math.PI / 180;
+  const toDeg = (v) => v * 180 / Math.PI;
+
+  const lat1 = toRad(window.lastUserLat);
+  const lat2 = toRad(window.targetLat);
+  const dLng = toRad(window.targetLng - window.lastUserLng);
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  let bearing = (toDeg(Math.atan2(y, x)) + 360) % 360;
+
+  let visualRotation = (bearing - smoothedHeading);
+  compassCircle.style.transform = `rotate(${visualRotation}deg)`;
+}
+
+function stopNav() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  window.removeEventListener('deviceorientationabsolute', handleOrientation);
+  window.removeEventListener('deviceorientation', handleOrientation);
+  if (userMarker) userMarker.setMap(null);
+  const overlay = document.getElementById('nav-overlay');
+  if (overlay) overlay.remove();
+  markers.forEach(m => m.setMap(map));
+}
+
+// Matte för avståndet
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const d = R * c;
+  return d < 1 ? Math.round(d * 1000) + " m" : d.toFixed(1) + " km";
+}
+
+function stopNav() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  if (userMarker) userMarker.setMap(null);
+  const overlay = document.getElementById('nav-overlay');
+  if (overlay) overlay.remove();
+  
+  // Återställ alla nålar på kartan
+  markers.forEach(m => m.map = map);
+  map.setZoom(11); // Eller vad din default-zoom är
+}
+
+// I Index.html (script-delen)
+function triggerUpload(blockId, btn) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*'; // Öppnar kamera/galleri
+  
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    const originalText = btn.innerHTML;
+    
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Laddar upp...';
+    btn.disabled = true;
+
+    reader.onload = function(event) {
+      google.script.run.withSuccessHandler(res => {
+        if(res.success) {
+          btn.innerHTML = "Klar! ✅";
+          btn.className = "btn btn-sm btn-success";
+          
+          // Uppdatera lokala db-objektet så bilden syns direkt i openCrag
+          const b = db.blocks.find(item => String(item.ID) === String(blockId));
+          if(b) b.DriveID = res.fileId;
+          
+          setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.className = "btn btn-sm btn-outline-light";
+            btn.disabled = false;
+          }, 2000);
+        } else {
+          alert("Uppladdningen misslyckades: " + res.error);
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }
+      }).uploadBlockTopo(event.target.result, blockId);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+let modalScale = 1;
+let startDist = 0;
+
+function openImageModal(url) {
+    const modal = document.getElementById('image-modal');
+    const img = document.getElementById('modal-img');
+    
+    img.src = url.replace("=s0", "") + "=s2048"; 
+    modalScale = 1;
+    img.style.transform = `scale(${modalScale})`;
+    
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+
+    // Touch-event för Pinch Zoom
+    modal.addEventListener('touchstart', handleTouchStart, {passive: false});
+    modal.addEventListener('touchmove', handleTouchMove, {passive: false});
+}
+
+function handleTouchStart(e) {
+    if (e.touches.length === 2) {
+        startDist = Math.hypot(
+            e.touches[0].pageX - e.touches[1].pageX,
+            e.touches[0].pageY - e.touches[1].pageY
+        );
+    }
+}
+
+function handleTouchMove(e) {
+    if (e.touches.length === 2) {
+        e.preventDefault(); // Hindra hela sidan från att rulla
+        const dist = Math.hypot(
+            e.touches[0].pageX - e.touches[1].pageX,
+            e.touches[0].pageY - e.touches[1].pageY
+        );
+        
+        const delta = dist / startDist;
+        modalScale = Math.min(Math.max(1, modalScale * delta), 4); // Zoom mellan 1x och 4x
+        
+        document.getElementById('modal-img').style.transform = `scale(${modalScale})`;
+        startDist = dist;
+    }
+}
+
+function closeImageModal() {
+    document.getElementById('image-modal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+    modalScale = 1;
+}
+
+function hideLoadingScreen() {
+  const screen = document.getElementById('loading-screen');
+  if (screen) {
+    screen.style.opacity = '0'; // Tona ut (tack vare CSS-transition)
+    setTimeout(() => {
+      screen.style.display = 'none'; // Ta bort helt efter uttoningen
+    }, 500); // Matcha tiden i CSS-transition (0.5s)
+  }
+}
+
+
+
+function openLoginPanel() {
+    const panel = document.getElementById('login-panel');
+    const input = document.getElementById('admin-pw');
+    
+    panel.style.left = '0'; // Glid in
+    input.value = '';
+    setTimeout(() => input.focus(), 350); // Fokusera efter animationen
+}
+
+function closeLoginPanel() {
+    document.getElementById('login-panel').style.left = '-100%'; // Glid ut
+}
+
+
+
+
+function logoutAdmin() {
+  // 1. Nollställ inloggningsstatus omedelbart
+  isAdminLoggedIn = false;
+  // Nollställ session-token (backend sessions expire automatically).
+  __sessionToken = null;
+  
+  // 2. Rensa innehållet i admin-main så inget ligger kvar dolt
+  const adminMain = document.getElementById('admin-main');
+  if (adminMain) adminMain.innerHTML = '';
+
+  // 3. Växla vyer
+  const publicView = document.getElementById('app-public');
+  const adminView = document.getElementById('app-admin');
+  
+  if (adminView) adminView.style.setProperty('display', 'none', 'important');
+  if (publicView) publicView.style.setProperty('display', 'flex', 'important');
+  
+  console.log("Admin utloggad utan popup.");
+}
+
+
+
+function showToast(message, duration = 3000) {
+  const toast = document.getElementById('global-toast');
+  const msgSpan = document.getElementById('toast-msg');
+  
+  msgSpan.innerText = message;
+  toast.classList.add('show');
+
+  // Ta bort den automatiskt efter vald tid
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, duration);
+}
+  </script>
+
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEENXcN06LUX9yp5Y7RaGVm3O3AYOsCW4&libraries=marker&v=weekly"></script>
+<div id="image-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:3000; overflow:auto; -webkit-overflow-scrolling:touch;">
+  
+  <div id="modal-zoom-wrapper" style="min-height:100vh; display:flex; align-items:center; justify-content:center;">
+    <img id="modal-img" src="" style="width:100%; height:auto; transition:transform 0.1s ease-out; transform-origin:center center;">
+  </div>
+
+  <button type="button" onclick="closeImageModal()" 
+          style="position:fixed; top:20px; right:20px; width:44px; height:44px; background:#222; color:#fff; border:2px solid #fff; border-radius:50%; font-size:24px; font-weight:bold; display:flex; justify-content:center; align-items:center; z-index:4000; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.5); padding:0; margin:0; line-height:1;">
+    X
+  </button>
+
+</div>
+
+<div id="global-toast"><span id="toast-msg"></span></div>
+</body>
+</html>
