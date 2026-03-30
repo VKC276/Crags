@@ -2502,14 +2502,15 @@ function closeCommentCard() {
 
 <div id="commentOverlay"
      style="position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-            display: none; z-index: 999; 
+            display: none; z-index: 9999; /* högre än allt annat */
             justify-content: center; align-items: center;"
      onclick="closeCommentCard()">
 
   <div id="commentCard"
        style="background: white; border-radius: 12px;
               padding: 16px 18px; width: 85%; max-width: 400px;
-              box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative;"
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative;
+              z-index: 10000;"  <!-- kortet måste vara högre än overlay -->
        onclick="event.stopPropagation()">
 
     <!-- STÄNG KNAPP -->
@@ -2530,5 +2531,6 @@ function closeCommentCard() {
 
   </div>
 </div>
+  
 </body>
 </html>
