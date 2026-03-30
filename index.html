@@ -798,9 +798,10 @@ function openCrag(id, query = "") {
 
   return `
      <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light"
-       style="${isMatch ? 'background-color: #e8f5e9;' : ''}">
+       style="cursor: pointer; ${isMatch ? 'background-color: #e8f5e9;' : ''}"
+       onclick="openCommentCard(${JSON.stringify(r.Kommentar || '')})">
     
-    <!-- VÄNSTER: Startnummer + namn -->
+    <!-- VÄNSTER -->
     <div class="ps-2 d-flex align-items-center">
       ${r.StartOrder ? 
         `<span class="badge rounded-pill bg-primary me-2 d-flex justify-content-center align-items-center" 
@@ -815,32 +816,20 @@ function openCrag(id, query = "") {
       </span>
     </div>
 
-    <!-- HÖGER: Kommentar + grad + typ -->
+    <!-- HÖGER -->
     <div class="pe-2 d-flex align-items-center">
-      
-      <div class="d-flex align-items-center gap-2 text-end me-2">
-        
-        <!-- Kommentar -->
-        ${r.Kommentar && r.Kommentar.trim() !== "" 
-          ? `<span class="text-muted small fst-italic">(${r.Kommentar.trim()})</span>` 
-          : ""
-        }
-
-        <!-- Grad -->
+      <div class="text-end me-2">
         <span class="badge ${isMatch ? 'bg-success' : 'bg-secondary'} opacity-75"
               style="font-size: 0.7rem;">
           ${r.Grad}
         </span>
-
-        <!-- Typ -->
         ${typeLabel}
       </div>
-
-      <!-- Pil -->
-      <i class="bi bi-chevron-right text-muted" style="font-size: 0.8rem;"></i>
+      <i class="bi bi-chat-dots text-muted" style="font-size: 0.8rem;"></i>
     </div>
 
-  </div>`;
+  </div>
+`;
 }).join('') : '<div class="small text-muted ps-2 italic">Inga leder inlagda än.</div>'}
         </div>
       </div>`;
@@ -2475,6 +2464,20 @@ function showToast(message, duration = 3000) {
     toast.classList.remove('show');
   }, duration);
 }
+
+
+function openCommentCard(text) {
+  if (!text || text.trim() === "") return;
+
+  document.getElementById("commentText").innerText = text;
+  document.getElementById("commentOverlay").style.display = "block";
+}
+
+function closeCommentCard() {
+  document.getElementById("commentOverlay").style.display = "none";
+}
+
+    
   </script>
 
   <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEENXcN06LUX9yp5Y7RaGVm3O3AYOsCW4&libraries=marker&v=weekly&loading=async"></script>
@@ -2492,5 +2495,24 @@ function showToast(message, duration = 3000) {
 </div>
 
 <div id="global-toast"><span id="toast-msg"></span></div>
+
+  <div id="commentOverlay" 
+     style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 999;"
+     onclick="closeCommentCard()">
+
+  <div id="commentCard"
+       style="position: absolute; bottom: 0; left: 0; right: 0;
+              background: white; border-radius: 16px 16px 0 0;
+              padding: 16px; max-height: 60%; overflow-y: auto;"
+       onclick="event.stopPropagation()">
+
+    <div class="text-center text-muted mb-2" style="font-size: 0.7rem;">
+      Kommentar
+    </div>
+
+    <div id="commentText" class="small"></div>
+
+  </div>
+</div>
 </body>
 </html>
