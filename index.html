@@ -2472,9 +2472,10 @@ function openCommentCardFromEl(el) {
   if (!text || text.trim() === "") return;
 
   document.getElementById("commentText").innerText = text;
-  document.getElementById("commentOverlay").style.display = "block";
-}
 
+  const overlay = document.getElementById("commentOverlay");
+  overlay.style.display = "flex"; // 👈 viktigt!
+}
 
 function closeCommentCard() {
   document.getElementById("commentOverlay").style.display = "none";
@@ -2499,20 +2500,32 @@ function closeCommentCard() {
 
 <div id="global-toast"><span id="toast-msg"></span></div>
 
-  <div id="commentOverlay" 
-     style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 999;"
+<div id="commentOverlay"
+     style="position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            display: none; z-index: 999; 
+            justify-content: center; align-items: center;"
      onclick="closeCommentCard()">
 
   <div id="commentCard"
-       style="position: absolute; bottom: 0; left: 0; right: 0;
-              background: white; border-radius: 16px 16px 0 0;
-              padding: 16px; max-height: 60%; overflow-y: auto;"
+       style="background: white; border-radius: 12px;
+              padding: 16px 18px; width: 85%; max-width: 400px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative;"
        onclick="event.stopPropagation()">
 
-    <div class="text-center text-muted mb-2" style="font-size: 0.7rem;">
+    <!-- STÄNG KNAPP -->
+    <button onclick="closeCommentCard()"
+            style="position: absolute; top: 8px; right: 10px;
+                   border: none; background: none; font-size: 1.2rem;
+                   color: #666; cursor: pointer;">
+      ✕
+    </button>
+
+    <!-- RUBRIK -->
+    <div class="text-muted mb-2" style="font-size: 0.7rem;">
       Kommentar
     </div>
 
+    <!-- TEXT -->
     <div id="commentText" class="small"></div>
 
   </div>
