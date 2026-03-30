@@ -1099,7 +1099,7 @@ function renderAdminHome() {
         <div class="d-flex">
           <button class="btn btn-sm btn-outline-info ms-2" onclick="renderEditLocation('${loc.ID}')">⚙️</button>
           ${currentUser.role === 'superadmin' ? 
-            `<button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteLocation('${loc.ID}')">🗑️</button>` : '' 
+            `<button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteLocationAction('${loc.ID}')">🗑️</button>` : '' 
           }
         </div>
       </div>
