@@ -22,29 +22,6 @@
         z-index: 2100; /* Över kartan och under/ jämte inget som täcker söket */
         pointer-events: none;
     }
-    .floating-search-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px;
-        pointer-events: none;
-        max-width: 100%;
-    }
-    .floating-search-row .search-box {
-        flex: 1 1 180px;
-        min-width: 0;
-    }
-    .map-sat-toggle-btn {
-        pointer-events: auto;
-        flex: 0 0 auto;
-        white-space: nowrap;
-        font-size: 0.7rem;
-        font-weight: 700;
-        padding: 0 12px;
-        min-height: 44px;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    }
     .search-box {
         background: white;
         height: 50px;
@@ -73,22 +50,67 @@
   opacity: 1;
 }
 
-/* Uppdaterad Bottom Nav för bara 2 knappar */
+/* Bottom nav: MAP | LIST + satellit (höger, bara i kartläge) */
 .modern-nav {
   position: fixed;
   bottom: 25px;
   left: 50%;
   transform: translateX(-50%);
-  width: 85%; /* Lite smalare och nättare nu när det bara är två */
-  max-width: 320px;
+  width: 92%;
+  max-width: 400px;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   height: 60px;
   display: flex;
-  border-radius: 30px; /* Mer rundad "pill"-form */
+  align-items: stretch;
+  border-radius: 30px;
   box-shadow: 0 10px 25px rgba(0,0,0,0.1);
   z-index: 2000;
   padding: 5px;
+  gap: 0;
+}
+.nav-satellite-wrap {
+  display: none;
+  align-items: center;
+  flex-shrink: 0;
+}
+.nav-satellite-wrap.is-visible {
+  display: flex;
+}
+.nav-sat-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 28px;
+  margin: 8px 2px 8px 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 1px;
+}
+.nav-sat-btn {
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.35px;
+  padding: 0 10px 0 8px;
+  margin: 0 4px 0 0;
+  border-radius: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.5rem;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.nav-sat-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #333;
+}
+.nav-sat-btn[aria-pressed="true"] {
+  background: #fff !important;
+  color: #0d6efd !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
 }
 
 /* Grundstilen för knapparna */
@@ -399,18 +421,13 @@
 <div id="app-public" style="display: block; width: 100%; height: 100%; position: relative; overflow: hidden;">
   
   <div class="floating-search-wrapper">
-    <div class="floating-search-row">
-      <div class="search-box shadow">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
-        <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
-        <div class="admin-trigger" onclick="toggleAdmin(true)">
-          ⚙️
-        </div>
+    <div class="search-box shadow">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
+      <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
+      <div class="admin-trigger" onclick="toggleAdmin(true)">
+        ⚙️
       </div>
-      <button type="button" id="btn-toggle-satellite" class="btn btn-light btn-sm border map-sat-toggle-btn" onclick="toggleMainMapSatellite()"
-              style="display: block;"
-              aria-pressed="false" title="Växla satellit / karta">Satellit</button>
     </div>
   </div>
 
@@ -422,8 +439,8 @@
     <div id="list-container">Loading...</div>
   </div>
 
-<nav class="modern-nav">
-  <div id="nav-map" class="nav-item active" onclick="switchView('map')">
+<nav class="modern-nav" aria-label="Vy och karta">
+  <div id="nav-map" class="nav-item active" onclick="switchView('map')" role="button" tabindex="0">
 <span class="nav-icon">
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
@@ -432,7 +449,7 @@
   </svg></span>
      <span class="nav-label">MAP</span>
   </div>
-  <div id="nav-list" class="nav-item" onclick="switchView('list')">
+  <div id="nav-list" class="nav-item" onclick="switchView('list')" role="button" tabindex="0">
     <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="8" y1="6" x2="21" y2="6"></line>
     <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -441,10 +458,12 @@
     <line x1="3" y1="12" x2="3.01" y2="12"></line>
     <line x1="3" y1="18" x2="3.01" y2="18"></line>
   </svg></span>
-
-
-    
     <span class="nav-label">LIST</span>
+  </div>
+  <div id="nav-satellite-wrap" class="nav-satellite-wrap is-visible" aria-hidden="false">
+    <div class="nav-sat-divider" aria-hidden="true"></div>
+    <button type="button" id="btn-toggle-satellite" class="nav-sat-btn" onclick="event.stopPropagation(); toggleMainMapSatellite();"
+            aria-pressed="false" title="Växla satellit / karta">Satellit</button>
   </div>
 </nav>
 </div>
@@ -789,16 +808,24 @@ function switchView(view) {
     navList.classList.toggle('active', !isMap);
   }
 
-  const satBtn = document.getElementById('btn-toggle-satellite');
-  if (satBtn) satBtn.style.display = isMap ? 'block' : 'none';
+  const satWrap = document.getElementById("nav-satellite-wrap");
+  if (satWrap) {
+    if (isMap) {
+      satWrap.classList.add("is-visible");
+      satWrap.setAttribute("aria-hidden", "false");
+    } else {
+      satWrap.classList.remove("is-visible");
+      satWrap.setAttribute("aria-hidden", "true");
+    }
+  }
 }
 
 function syncSatelliteToggleUi() {
-  var el = document.getElementById('btn-toggle-satellite');
+  var el = document.getElementById("btn-toggle-satellite");
   if (!el) return;
   var sat = !!window.__usingSatelliteLayer;
-  el.textContent = sat ? 'Karta' : 'Satellit';
-  el.setAttribute('aria-pressed', sat ? 'true' : 'false');
+  el.textContent = sat ? "Karta" : "Satellit";
+  el.setAttribute("aria-pressed", sat ? "true" : "false");
 }
 
 function toggleMainMapSatellite() {
@@ -1251,6 +1278,8 @@ function handleChangeOwnPassword() {
         curEl.value = "";
         p1El.value = "";
         p2El.value = "";
+        var pwCard = document.getElementById("own-pw-card");
+        if (pwCard) pwCard.style.display = "none";
         showToast("Lösenord uppdaterat.");
       } else {
         err.textContent = (res && res.msg) ? res.msg : "Kunde inte byta lösenord.";
@@ -1264,6 +1293,13 @@ function handleChangeOwnPassword() {
       err.style.display = "block";
     })
     .changeOwnPassword(cur, p1);
+}
+
+function toggleOwnPasswordPanel() {
+  var card = document.getElementById("own-pw-card");
+  if (!card) return;
+  var hidden = card.style.display === "none";
+  card.style.display = hidden ? "block" : "none";
 }
 
 function renderForcePasswordChange() {
@@ -1345,8 +1381,12 @@ function renderAdminHome() {
     ? renderUserManagement() 
     : '';
 
+  const changePwdRevealHtml = `
+    <button type="button" id="own-pw-reveal-btn" class="btn btn-primary btn-sm w-100 fw-bold admin-action-btn mb-2" onclick="toggleOwnPasswordPanel()">Byt lösenord</button>
+  `;
+
   const changeOwnPasswordHtml = `
-    <div class="card bg-light text-dark border-secondary mb-4 shadow-sm">
+    <div id="own-pw-card" class="card bg-light text-dark border-secondary mb-4 shadow-sm" style="display:none;">
       <div class="card-body p-3">
         <h6 class="text-secondary small fw-bold text-uppercase mb-2">Byt lösenord</h6>
         <p class="small text-muted mb-2">Kräver ditt nuvarande lösenord.</p>
@@ -1361,6 +1401,7 @@ function renderAdminHome() {
 
   // 5. Skriv NU bara till admin-main (så knapparna högst upp stannar kvar)
   container.innerHTML = `
+    ${changePwdRevealHtml}
     ${changeOwnPasswordHtml}
     ${createBtnHtml}
     <h6 class="text-muted small mb-2 text-uppercase">Crags</h6>
