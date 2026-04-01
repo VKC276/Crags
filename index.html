@@ -797,10 +797,10 @@ function updateNavMapNavUi() {
   if (!navMap || !label) return;
   var mapActive = navMap.classList.contains("active");
   if (mapActive) {
-    label.textContent = "Byt karttyp";
+    label.textContent = "MAP";
     label.classList.add("nav-label--maptype");
-    navMap.setAttribute("aria-label", "Byt karttyp: satellit eller standardkarta");
-    navMap.title = "Tryck för satellit eller standardkarta";
+    navMap.setAttribute("aria-label", "Change map typ: satellite or stock");
+    navMap.title = "Press för satellite or stock map";
   } else {
     label.textContent = "MAP";
     label.classList.remove("nav-label--maptype");
