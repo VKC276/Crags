@@ -69,48 +69,15 @@
   padding: 5px;
   gap: 0;
 }
-.nav-satellite-wrap {
-  display: none;
-  align-items: center;
-  flex-shrink: 0;
-}
-.nav-satellite-wrap.is-visible {
-  display: flex;
-}
-.nav-sat-divider {
-  width: 1px;
-  align-self: stretch;
-  min-height: 28px;
-  margin: 8px 2px 8px 6px;
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 1px;
-}
-.nav-sat-btn {
-  border: none;
-  background: transparent;
-  color: #666;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.35px;
-  padding: 0 10px 0 8px;
-  margin: 0 4px 0 0;
-  border-radius: 22px;
-  cursor: pointer;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 4.5rem;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-}
-.nav-sat-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #333;
-}
-.nav-sat-btn[aria-pressed="true"] {
-  background: #fff !important;
-  color: #0d6efd !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+/* Diskret etikett på MAP när kartvyn är aktiv (växlar karttyp vid klick) */
+.nav-label.nav-label--maptype {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-transform: none;
+  line-height: 1.15;
+  text-align: center;
+  max-width: 4.6rem;
 }
 
 /* Grundstilen för knapparna */
@@ -440,14 +407,15 @@
   </div>
 
 <nav class="modern-nav" aria-label="Vy och karta">
-  <div id="nav-map" class="nav-item active" onclick="switchView('map')" role="button" tabindex="0">
+  <div id="nav-map" class="nav-item active" onclick="onNavMapClick()" onkeydown="onNavMapKeydown(event)" role="button" tabindex="0"
+       aria-label="Visa karta">
 <span class="nav-icon">
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
     <line x1="8" y1="2" x2="8" y2="18"></line>
     <line x1="16" y1="6" x2="16" y2="22"></line>
   </svg></span>
-     <span class="nav-label">MAP</span>
+     <span id="nav-map-label" class="nav-label">MAP</span>
   </div>
   <div id="nav-list" class="nav-item" onclick="switchView('list')" role="button" tabindex="0">
     <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -459,11 +427,6 @@
     <line x1="3" y1="18" x2="3.01" y2="18"></line>
   </svg></span>
     <span class="nav-label">LIST</span>
-  </div>
-  <div id="nav-satellite-wrap" class="nav-satellite-wrap is-visible" aria-hidden="false">
-    <div class="nav-sat-divider" aria-hidden="true"></div>
-    <button type="button" id="btn-toggle-satellite" class="nav-sat-btn" onclick="event.stopPropagation(); toggleMainMapSatellite();"
-            aria-pressed="false" title="Växla satellit / karta">Satellit</button>
   </div>
 </nav>
 </div>
@@ -808,24 +771,48 @@ function switchView(view) {
     navList.classList.toggle('active', !isMap);
   }
 
-  const satWrap = document.getElementById("nav-satellite-wrap");
-  if (satWrap) {
-    if (isMap) {
-      satWrap.classList.add("is-visible");
-      satWrap.setAttribute("aria-hidden", "false");
-    } else {
-      satWrap.classList.remove("is-visible");
-      satWrap.setAttribute("aria-hidden", "true");
-    }
+  updateNavMapNavUi();
+}
+
+function onNavMapClick() {
+  var navMap = document.getElementById("nav-map");
+  if (!navMap) return;
+  if (!navMap.classList.contains("active")) {
+    switchView("map");
+    return;
+  }
+  toggleMainMapSatellite();
+}
+
+function onNavMapKeydown(ev) {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  ev.preventDefault();
+  onNavMapClick();
+}
+
+/** Uppdaterar MAP-radens etikett: kort "MAP" i listvy, diskret karttyp-text i kartvy. */
+function updateNavMapNavUi() {
+  var navMap = document.getElementById("nav-map");
+  var label = document.getElementById("nav-map-label");
+  if (!navMap || !label) return;
+  var mapActive = navMap.classList.contains("active");
+  if (mapActive) {
+    label.textContent = "Byt karttyp";
+    label.classList.add("nav-label--maptype");
+    navMap.setAttribute("aria-label", "Byt karttyp: satellit eller standardkarta");
+    navMap.title = "Tryck för satellit eller standardkarta";
+  } else {
+    label.textContent = "MAP";
+    label.classList.remove("nav-label--maptype");
+    navMap.setAttribute("aria-label", "Visa karta");
+    navMap.removeAttribute("title");
   }
 }
 
 function syncSatelliteToggleUi() {
-  var el = document.getElementById("btn-toggle-satellite");
-  if (!el) return;
-  var sat = !!window.__usingSatelliteLayer;
-  el.textContent = sat ? "Karta" : "Satellit";
-  el.setAttribute("aria-pressed", sat ? "true" : "false");
+  updateNavMapNavUi();
+  var nt = document.getElementById("nav-sat-toggle");
+  if (nt) nt.textContent = window.__usingSatelliteLayer ? "Karta" : "Satellit";
 }
 
 function toggleMainMapSatellite() {
@@ -843,8 +830,6 @@ function toggleMainMapSatellite() {
     window.__usingSatelliteLayer = true;
   }
   syncSatelliteToggleUi();
-  var nt = document.getElementById("nav-sat-toggle");
-  if (nt) nt.textContent = window.__usingSatelliteLayer ? "Karta" : "Satellit";
 }
 
   
