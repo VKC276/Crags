@@ -1450,6 +1450,10 @@ function finalDelete(username, index) {
 function handleDeleteClick(routeId, blockId, btn) {
   // Om knappen redan är i "Bekräfta"-läge, kör raderingen
   if (btn.getAttribute('data-confirm') === 'true') {
+    if (btn.__confirmResetTimer) {
+      clearTimeout(btn.__confirmResetTimer);
+      delete btn.__confirmResetTimer;
+    }
     executeDelete(routeId, blockId, btn);
   } else {
     // Första klicket: Ändra utseende på knappen
@@ -1459,12 +1463,13 @@ function handleDeleteClick(routeId, blockId, btn) {
     btn.setAttribute('data-confirm', 'true');
 
     // Återställ knappen efter 3 sekunder om användaren ångrar sig
-    setTimeout(() => {
-      if (btn) {
+    btn.__confirmResetTimer = setTimeout(() => {
+      if (btn && btn.getAttribute('data-confirm') === 'true' && !btn.disabled) {
         btn.innerHTML = originalText;
         btn.classList.replace('btn-danger', 'btn-outline-danger');
         btn.removeAttribute('data-confirm');
       }
+      delete btn.__confirmResetTimer;
     }, 3000);
   }
 }
@@ -1475,22 +1480,35 @@ function executeDelete(routeId, blockId, btn) {
 
   google.script.run
     .withSuccessHandler(response => {
-      if (response.success) {
-        // 1. Ta bort leden från vårt lokala minne (db.routes)
+      if (response && response.success) {
         db.problems = db.problems.filter(r => String(r.ID) !== String(routeId));
-
-        // 2. Om blocket också raderades på servern, ta bort det lokalt också
         if (response.blockDeleted) {
           db.blocks = db.blocks.filter(b => String(b.ID) !== String(blockId));
         }
 
-        // 3. Nu ritar vi om vyn med den uppdaterade datan
-        if (typeof renderAdminHome === "function") {
-          renderAdminHome(); 
+        const listEl = document.getElementById("admin-routes-list");
+        if (listEl && __adminEditingCragId) {
+          refreshAdminRoutesListForCurrentCrag();
+          showToast("Led raderad.");
+        } else if (typeof renderAdminHome === "function") {
+          renderAdminHome();
         } else {
-          location.reload(); // Fallback
+          location.reload();
         }
+      } else {
+        showToast("Kunde inte radera leden.");
+        btn.disabled = false;
+        btn.innerHTML = "🗑️ Ta bort";
+        btn.classList.replace("btn-danger", "btn-outline-danger");
+        btn.removeAttribute("data-confirm");
       }
+    })
+    .withFailureHandler(() => {
+      showToast("Nätverksfel vid radering.");
+      btn.disabled = false;
+      btn.innerHTML = "🗑️ Ta bort";
+      btn.classList.replace("btn-danger", "btn-outline-danger");
+      btn.removeAttribute("data-confirm");
     })
     .deleteRoute(routeId);
 }
@@ -1868,8 +1886,24 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
   container.innerHTML = html;
 }
 
+function getAllBlocksDropdownHtml() {
+  return db.blocks
+    .map(b => {
+      const parentLoc = db.locations.find(l => String(l.ID) === String(b.CragID));
+      return `<option value="${b.ID}">${parentLoc ? parentLoc.Namn : "?"} - ${b.Namn}</option>`;
+    })
+    .join("");
+}
 
-
+/** Uppdaterar bara block-/led-listan under crag-admin (behåller formulär överst). */
+function refreshAdminRoutesListForCurrentCrag() {
+  const cragId = __adminEditingCragId;
+  if (!cragId) return;
+  const listEl = document.getElementById("admin-routes-list");
+  if (!listEl) return;
+  const sectorBlockIds = db.blocks.filter(b => String(b.CragID) === String(cragId)).map(b => b.ID);
+  renderAdminRoutesBySector(sectorBlockIds, getAllBlocksDropdownHtml());
+}
 
   function updateRouteData(id, btn) {
   const originalText = btn.innerHTML;
@@ -2643,23 +2677,23 @@ function triggerUpload(blockId, btn) {
 
     reader.onload = function(event) {
       google.script.run.withSuccessHandler(res => {
-        if(res.success) {
-          btn.innerHTML = "Klar!";
-          btn.className = "btn btn-sm btn-success admin-action-btn";
-          
+        if (res.success) {
           const b = db.blocks.find(item => String(item.ID) === String(blockId));
-          if(b) b.DriveID = res.fileId;
-          
-          setTimeout(() => {
-            btn.innerHTML = originalText;
-            btn.className = "btn btn-sm btn-primary admin-action-btn";
-            btn.disabled = false;
-          }, 2000);
+          if (b) b.DriveID = res.fileId;
+          showToast("Topo uppladdad.");
+          if (document.getElementById("admin-routes-list") && __adminEditingCragId) {
+            refreshAdminRoutesListForCurrentCrag();
+          }
         } else {
-          alert("Uppladdningen misslyckades: " + res.error);
-          btn.innerHTML = originalText;
-          btn.disabled = false;
+          alert("Uppladdningen misslyckades: " + (res.error || res.msg || ""));
         }
+        btn.innerHTML = originalText;
+        btn.className = "btn btn-sm btn-primary admin-action-btn";
+        btn.disabled = false;
+      }).withFailureHandler(() => {
+        showToast("Nätverksfel vid topo-uppladdning.");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
       }).uploadBlockTopo(event.target.result, blockId);
     };
     reader.readAsDataURL(file);
