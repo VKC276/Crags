@@ -1684,13 +1684,17 @@ async function renderEditLocation(id) {
     </div>
     
     <div class="row g-2 mb-2">
-      <div class="col-8">
+      <div class="col-5">
         <label class="text-muted small mb-1">Namn på ny led</label>
         <input id="adm-route-name" oninput="validateForm()" type="text" placeholder="t.ex. Silverlinjen" class="form-control bg-light text-dark border-secondary">
       </div>
-      <div class="col-4">
+      <div class="col-3">
         <label class="text-muted small mb-1">Grad</label>
         <input id="adm-route-grade" oninput="validateForm()" type="text" placeholder="Grad" class="form-control bg-light text-dark border-secondary">
+      </div>
+      <div class="col-2">
+        <label class="text-muted small mb-1">Nr</label>
+        <input id="adm-route-order" type="text" inputmode="numeric" placeholder="#" class="form-control bg-light text-dark border-secondary text-center fw-bold">
       </div>
     </div>
 
@@ -1872,10 +1876,10 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
   btn.disabled = true; 
   btn.innerHTML = "Sparar...";
 
-const typeEl = document.getElementById(`edit-type-${id}`);
-const comment = (document.getElementById(`edit-comment-${id}`)?.value || "").trim();
-console.log("TEST 1 (Plus):", 'edit-type-' + id);
-console.log("TEST 2 (Backtick):", `edit-type-${id}`);
+  const pBefore = db.problems.find(item => String(item.ID) === String(id));
+  const prevBlockId = pBefore ? String(pBefore.BlockID) : null;
+
+  const comment = (document.getElementById(`edit-comment-${id}`)?.value || "").trim();
 
   // Hämta värdena, inklusive det nya StartOrder-fältet
   const data = { 
@@ -1906,9 +1910,12 @@ console.log("TEST 2 (Backtick):", `edit-type-${id}`);
         btn.disabled = false; 
         btn.innerHTML = originalText; 
         btn.className = "btn btn-sm btn-primary"; 
-        // Om vi har bytt block vill vi nog ladda om vyn så leden hamnar under rätt rubrik
-        const currentCragId = db.blocks.find(b => String(b.ID) === String(data.BlockID)).CragID;
-        editCragAdmin(currentCragId);
+        // Full omritning bara om leden flyttats till annat block (undviker dubbla kort / onödig reload)
+        const moved = prevBlockId != null && String(data.BlockID) !== prevBlockId;
+        if (moved) {
+          const blk = db.blocks.find(b => String(b.ID) === String(data.BlockID));
+          if (blk) editCragAdmin(String(blk.CragID));
+        }
       }, 2000);
     } else {
       alert("Kunde inte spara: " + (res.msg || "Okänt fel"));
@@ -1946,13 +1953,16 @@ console.log("TEST 2 (Backtick):", `edit-type-${id}`);
 
     function saveRoute() {
   const btn = event.currentTarget;
+  if (btn.dataset.saving === "1") return;
 
   // 1. Hämta alla värden från input-fälten först
   const blockId = document.getElementById('adm-block-id').value;
   const name = document.getElementById('adm-route-name').value;
   const grade = document.getElementById('adm-route-grade').value;
-  const type = document.getElementById('adm-route-type').value; // Dubbelkolla att ID:t är adm-route-type i din HTML
+  const type = document.getElementById('adm-route-type').value;
   const comment = document.getElementById('adm-route-comment').value;
+  const orderEl = document.getElementById('adm-route-order');
+  const startOrder = orderEl ? String(orderEl.value || "").trim() : "";
 
   // 2. Skapa ditt data-objekt
   const data = { 
@@ -1960,35 +1970,57 @@ console.log("TEST 2 (Backtick):", `edit-type-${id}`);
     Namn: name, 
     Grad: grade, 
     Typ: type, 
-     Kommentar: comment 
+    Kommentar: comment,
+    StartOrder: startOrder
   };
 
   // 3. Validera
  if(!data.Namn || !data.Grad) return showToast("⚠️ Fyll i allt!");
 
+  btn.dataset.saving = "1";
   btn.disabled = true; 
   btn.innerHTML = "Sparar...";
 
-  // 4. Skicka till Google
-  google.script.run.withSuccessHandler(res => {
-    if(res.success) {
-      btn.innerHTML = "Klar! 🚀";
-      
-      // Lägg till i lokala db (använder db.problems som du skrev)
-      db.problems.push({ ID: res.newId, ...data }); 
+  const done = () => {
+    btn.dataset.saving = "";
+    btn.disabled = false;
+    btn.innerHTML = "Spara ny led";
+  };
 
-      setTimeout(() => { 
-        btn.disabled = false; 
-        btn.innerHTML = "Spara ny led"; 
-        
-        // Hitta vilken sektor (CragID) vi är på för att ladda om admin-vyn
-        const parentBlock = db.blocks.find(b => String(b.ID) === String(data.BlockID));
-        if (parentBlock) {
-          editCragAdmin(parentBlock.CragID);
-        }
-      }, 1500);
-    }
-  }).saveNewRoute(data);
+  // 4. Skicka till Google
+  google.script.run
+    .withSuccessHandler(res => {
+      if (res.success) {
+        btn.innerHTML = "Klar! 🚀";
+        const nid = String(res.newId);
+        db.problems = db.problems.filter(p => String(p.ID) !== nid);
+        db.problems.push({
+          ID: res.newId,
+          BlockID: data.BlockID,
+          Namn: data.Namn,
+          Grad: data.Grad,
+          Typ: data.Typ,
+          Kommentar: data.Kommentar,
+          StartOrder: startOrder
+        });
+
+        setTimeout(() => { 
+          done();
+          const parentBlock = db.blocks.find(b => String(b.ID) === String(data.BlockID));
+          if (parentBlock) {
+            editCragAdmin(parentBlock.CragID);
+          }
+        }, 1500);
+      } else {
+        showToast("⚠️ Kunde inte spara leden.");
+        done();
+      }
+    })
+    .withFailureHandler(() => {
+      showToast("⚠️ Nätverksfel vid sparande.");
+      done();
+    })
+    .saveNewRoute(data);
 }
 
     function saveBlock(cragId) {
