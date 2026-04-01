@@ -247,6 +247,41 @@
     white-space: nowrap;
 }
 
+/* Större träffyta på mobil (ca 48px rekommenderas för touch) */
+@media (max-width: 768px) {
+  #app-admin .admin-action-btn {
+    min-height: 48px;
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+  }
+}
+
+/* Topo i kort (publik crag + admin): panoramor förblir inom bredden; detaljer i modal */
+.crag-topo-preview-wrap {
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+.crag-topo-preview-wrap img.crag-topo-preview-img,
+#app-admin .crag-topo-preview-wrap img.crag-topo-preview-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: min(45vh, 300px);
+  object-fit: contain;
+  object-position: center;
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Topomodal: panorering + zoom */
 #image-modal {
     touch-action: none;
@@ -834,13 +869,13 @@ function openCrag(id, query = "") {
     if (block.DriveID && block.DriveID !== "") {
       const imgUrl = "https://lh3.googleusercontent.com/d/" + block.DriveID;
       imgHtml = `
-        <div class="mb-3 text-center">
-          <img src="${imgUrl}" 
-               class="img-fluid rounded shadow-sm border border-secondary" 
-               style="max-height: 350px; width: 100%; object-fit: cover; cursor: pointer;" 
+        <div class="crag-topo-preview-wrap mb-3">
+          <img src="${imgUrl}=s800" 
+               class="crag-topo-preview-img img-fluid rounded shadow-sm border border-secondary" 
+               alt="Topo ${escapeHtmlAttr(block.Namn)}"
                onclick="openImageModal('${imgUrl}')"
                onerror="this.parentElement.style.display='none'">
-          <div class="text-muted mt-1" style="font-size: 0.65rem;">Klicka för fullskärm</div>
+          <div class="text-muted mt-1" style="font-size: 0.65rem;">Klicka för att zooma / panorera</div>
         </div>`;
     }
 
@@ -1803,11 +1838,13 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
 
         <div class="card-body p-2">
           ${block.DriveID ? `
-            <div class="text-center mb-3 border-bottom border-secondary pb-2">
-              <img src="https://lh3.googleusercontent.com/d/${block.DriveID}=s400" 
-                   style="max-height:150px; border-radius:4px;" 
-                   class="border border-secondary" 
+            <div class="crag-topo-preview-wrap mb-3 border-bottom border-secondary pb-2">
+              <img src="https://lh3.googleusercontent.com/d/${block.DriveID}=s800" 
+                   class="crag-topo-preview-img border border-secondary rounded shadow-sm" 
+                   alt="Topo förhandsvisning"
+                   onclick="openImageModal('https://lh3.googleusercontent.com/d/${block.DriveID}')"
                    onerror="this.src='https://placehold.co/100x100/444/aaa?text=Topo+Hittas+Ej'">
+              <div class="text-muted mt-1" style="font-size: 0.65rem;">Klicka för att zooma / panorera (samma som crag-vyn)</div>
             </div>
           ` : ''}
 
@@ -2830,7 +2867,9 @@ function openImageModal(url) {
   if (!modal || !img) return;
   bindImageModalOnce();
   resetImageModalView();
-  img.src = url.replace("=s0", "") + "=s2048";
+  var u = String(url || "").trim();
+  var base = u.replace(/=s0\b/gi, "").replace(/=s\d+$/i, "");
+  img.src = base + "=s2048";
   modal.style.display = "block";
   document.body.style.overflow = "hidden";
 }
