@@ -539,26 +539,6 @@
     window.google.script = window.google.script || {};
     window.google.script.run = createRunProxy_();
 
-// #region agent log
-(function agentLogCragOverlayInit() {
-  function run() {
-    var el = document.getElementById("crag-delete-overlay");
-    if (!el) {
-      fetch("http://127.0.0.1:7681/ingest/d19cfcad-ca26-4885-8f2e-0f7515abb8ca", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "d2e4e1" }, body: JSON.stringify({ sessionId: "d2e4e1", location: "POC HTML.txt:overlayInit", message: "crag-delete-overlay element missing", data: {}, timestamp: Date.now(), hypothesisId: "H4", runId: "pre-fix" }) }).catch(function () {});
-      return;
-    }
-    var cs = window.getComputedStyle(el);
-    fetch("http://127.0.0.1:7681/ingest/d19cfcad-ca26-4885-8f2e-0f7515abb8ca", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "d2e4e1" }, body: JSON.stringify({ sessionId: "d2e4e1", location: "POC HTML.txt:overlayInit", message: "crag-delete-overlay initial computed style", data: { computedDisplay: cs.display, inlineStyleAttr: el.getAttribute("style"), className: el.className, rectH: el.getBoundingClientRect().height, hasDFlex: el.classList.contains("d-flex") }, timestamp: Date.now(), hypothesisId: "H1", runId: "pre-fix" }) }).catch(function () {});
-    setTimeout(function () {
-      var cs2 = window.getComputedStyle(el);
-      fetch("http://127.0.0.1:7681/ingest/d19cfcad-ca26-4885-8f2e-0f7515abb8ca", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "d2e4e1" }, body: JSON.stringify({ sessionId: "d2e4e1", location: "POC HTML.txt:t+500ms", message: "crag-delete-overlay delayed check", data: { computedDisplay: cs2.display }, timestamp: Date.now(), hypothesisId: "H5", runId: "pre-fix" }) }).catch(function () {});
-    }, 500);
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
-  else run();
-})();
-// #endregion
-
 let currentUser = { authorized: false, role: null, username: null };
 
 function escapeHtmlAttr(str) {
@@ -2229,9 +2209,6 @@ function validateCragDeleteInput() {
 }
 
 function openCragDeleteOverlay(id) {
-  // #region agent log
-  fetch("http://127.0.0.1:7681/ingest/d19cfcad-ca26-4885-8f2e-0f7515abb8ca", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "d2e4e1" }, body: JSON.stringify({ sessionId: "d2e4e1", location: "POC HTML.txt:openCragDeleteOverlay", message: "openCragDeleteOverlay invoked", data: { hasId: !!id }, timestamp: Date.now(), hypothesisId: "H2", runId: "pre-fix" }) }).catch(function () {});
-  // #endregion
   __pendingDeleteCragId = id;
   const input = document.getElementById('crag-delete-input');
   const btn = document.getElementById('crag-delete-ok');
