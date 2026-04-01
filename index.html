@@ -9,7 +9,8 @@
     /* GRUNDSTIL (Behållen) */
     body { font-family: -apple-system, sans-serif; background: #f8f9fa; height: 100vh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
     .scroll-area { flex-grow: 1; overflow-y: auto; position: relative; height: 100%; }
-    #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; }
+    #view-map { position: relative; }
+    #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; touch-action: none; }
     
     /* NYTT: SVÄVANDE SÖKFÄLT (Ersätter gamla .header) */
     .floating-search-wrapper {
@@ -373,6 +374,9 @@
 
   <div id="view-map" style="height: 100%; width: 100%;">
     <div id="map-canvas" style="height: 100%;"></div>
+    <button type="button" id="btn-toggle-satellite" class="btn btn-light btn-sm shadow-sm border fw-bold" onclick="toggleMainMapSatellite()"
+            style="display: block; position: absolute; bottom: 88px; right: 12px; z-index: 5; font-size: 0.7rem; padding: 8px 10px; border-radius: 8px;"
+            aria-pressed="false" title="Växla satellit / karta">Satellit</button>
   </div>
   
   <div id="view-list" style="display: none; height: 100%; overflow-y: auto; padding: 90px 15px 100px 15px; background: #f8f9fa;">
@@ -643,20 +647,18 @@ function initMap() {
     center: vastervik, 
     mapId: "4504f8b373a348fd",
     mapTypeId: 'terrain',
-    // DYNAMISK KONTROLL:
-    // Om det är mobil (isMobile = true), dölj allt. Annars visa standard.
     disableDefaultUI: isMobile, 
-    
-    // Du kan fortfarande tvinga vissa inställningar oavsett enhet:
-    gestureHandling: 'greedy', // Gör det lättare att navigera med ett finger på mobil
+    gestureHandling: 'greedy',
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: false,
     panControl: false,
-    zoomControl: false // Inga +/- knappar på skärmen
-
-
+    zoomControl: false
   });
+  map.setOptions({ gestureHandling: 'greedy' });
+  window.__mapTypeBeforeSatellite = 'terrain';
+  window.__usingSatelliteLayer = false;
+  syncSatelliteToggleUi();
 
   markers = [];
   // Använd den nya funktionen i loopen
@@ -747,6 +749,36 @@ function switchView(view) {
     navMap.classList.toggle('active', isMap);
     navList.classList.toggle('active', !isMap);
   }
+
+  const satBtn = document.getElementById('btn-toggle-satellite');
+  if (satBtn) satBtn.style.display = isMap ? 'block' : 'none';
+}
+
+function syncSatelliteToggleUi() {
+  var el = document.getElementById('btn-toggle-satellite');
+  if (!el) return;
+  var sat = !!window.__usingSatelliteLayer;
+  el.textContent = sat ? 'Karta' : 'Satellit';
+  el.setAttribute('aria-pressed', sat ? 'true' : 'false');
+}
+
+function toggleMainMapSatellite() {
+  if (!map || typeof map.setMapTypeId !== 'function') return;
+  if (window.__usingSatelliteLayer) {
+    map.setMapTypeId(window.__mapTypeBeforeSatellite || 'terrain');
+    window.__usingSatelliteLayer = false;
+  } else {
+    try {
+      window.__mapTypeBeforeSatellite = map.getMapTypeId && map.getMapTypeId() ? map.getMapTypeId() : 'terrain';
+    } catch (e) {
+      window.__mapTypeBeforeSatellite = 'terrain';
+    }
+    map.setMapTypeId('hybrid');
+    window.__usingSatelliteLayer = true;
+  }
+  syncSatelliteToggleUi();
+  var nt = document.getElementById("nav-sat-toggle");
+  if (nt) nt.textContent = window.__usingSatelliteLayer ? "Karta" : "Satellit";
 }
 
   
@@ -1579,6 +1611,7 @@ async function renderEditLocation(id) {
               <label class="text-danger fw-bold d-block mb-1" style="font-size:0.6rem;">CRAG (C) — kan skrivas in</label>
               <input id="edit-loc-lat" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary text-center fw-bold mb-1" value="${escapeHtmlAttr(loc.Lat_Sektor || '')}" style="font-size:0.75rem;">
               <input id="edit-loc-lng" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary text-center fw-bold" value="${escapeHtmlAttr(loc.Lng_Sektor || '')}" style="font-size:0.75rem;">
+              <button type="button" class="btn btn-outline-danger btn-sm w-100 mt-1 py-1" style="font-size:0.65rem;" onclick="fillEditLocCoordsFromGeoloc('crag')">Från min position</button>
             </div>
           </div>
           <div class="col-6 px-1">
@@ -1586,6 +1619,7 @@ async function renderEditLocation(id) {
               <label class="text-primary fw-bold d-block mb-1" style="font-size:0.6rem;">PARK (P) — kan skrivas in</label>
               <input id="edit-loc-plat" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary text-center fw-bold mb-1" value="${escapeHtmlAttr(loc.ParkingLat || '')}" placeholder="Lat" style="font-size:0.75rem;">
               <input id="edit-loc-plng" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary text-center fw-bold" value="${escapeHtmlAttr(loc.ParkingLng || '')}" placeholder="Lng" style="font-size:0.75rem;">
+              <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-1 py-1" style="font-size:0.65rem;" onclick="fillEditLocCoordsFromGeoloc('park')">Från min position</button>
             </div>
           </div>
         </div>
@@ -1609,8 +1643,10 @@ async function renderEditLocation(id) {
       mapId: "ADMIN_MAP_PICKER",
       disableDefaultUI: true,
       zoomControl: true,
-      mapTypeId: 'terrain'
+      mapTypeId: 'terrain',
+      gestureHandling: 'greedy'
     });
+    pickerMap.setOptions({ gestureHandling: 'greedy' });
 
     const cragPin = new PinElement({ glyphText: "C", background: "#dc3545", borderColor: "#fff", glyphColor: "#fff" });
     const parkPin = new PinElement({ glyphText: "P", background: "#0d6efd", borderColor: "#fff", glyphColor: "#fff" });
@@ -1819,12 +1855,25 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
             <label class="text-muted small d-block mb-1" style="font-size:0.65rem;">BLOCKNAMN</label>
             <input type="text" class="form-control form-control-sm bg-white text-dark border-secondary" id="block-name-${block.ID}" value="${escapeHtmlAttr(block.Namn)}">
           </div>
-          <div class="d-flex flex-wrap gap-1 align-items-center">
-            <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="saveBlockName('${block.ID}', this)">Spara namn</button>
-            ${block.DriveID ? `<button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="clearTopoForBlock('${block.ID}', this)">Ta bort topo</button>` : ''}
-            <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="triggerUpload('${block.ID}', this)">📸 ${block.DriveID ? 'Byt topo' : 'Lägg till topo'}</button>
-            ${isSuper ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showBlockDeleteUI('${block.ID}')">Radera block</button>` : ''}
+          <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between w-100">
+            <div class="d-flex flex-wrap gap-1 align-items-center">
+              <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="saveBlockName('${block.ID}', this)">Spara namn</button>
+              <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="triggerUpload('${block.ID}', this)">${block.DriveID ? 'Byt topo' : 'Lägg till topo'}</button>
+            </div>
+            <div class="d-flex flex-wrap gap-1 align-items-center justify-content-end">
+              ${block.DriveID ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showTopoDeleteUI('${block.ID}')">Ta bort topo</button>` : ''}
+              ${isSuper ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showBlockDeleteUI('${block.ID}')">Radera block</button>` : ''}
+            </div>
           </div>
+          ${block.DriveID ? `
+          <div id="topo-del-wrap-${block.ID}" class="d-none mt-2 p-2 rounded border border-danger bg-danger bg-opacity-10">
+            <div class="small text-danger fw-bold text-uppercase mb-1" style="font-size:0.65rem;">Bekräfta — skriv ta bort</div>
+            <input type="text" class="form-control form-control-sm mb-2 border-danger" id="topo-del-inp-${block.ID}" placeholder="ta bort" autocomplete="off" oninput="validateTopoDeleteInput('${block.ID}')">
+            <div class="d-flex gap-1">
+              <button type="button" class="btn btn-danger btn-sm flex-grow-1 fw-bold" disabled id="topo-del-go-${block.ID}" onclick="executeClearTopo('${block.ID}')">OK</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" onclick="hideTopoDeleteUI('${block.ID}')">✕</button>
+            </div>
+          </div>` : ''}
           ${isSuper ? `
           <div id="block-del-wrap-${block.ID}" class="d-none mt-2 p-2 rounded border border-danger bg-danger bg-opacity-10">
             <div class="small text-danger fw-bold text-uppercase mb-1" style="font-size:0.65rem;">Bekräfta — skriv ta bort</div>
@@ -2144,31 +2193,78 @@ function saveBlockName(blockId, btn) {
     .updateBlockName(blockId, name);
 }
 
-function clearTopoForBlock(blockId, btn) {
-  const t = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = "...";
+function showTopoDeleteUI(blockId) {
+  hideBlockDeleteUI(blockId);
+  const w = document.getElementById("topo-del-wrap-" + blockId);
+  if (!w) return;
+  w.classList.remove("d-none");
+  const inp = document.getElementById("topo-del-inp-" + blockId);
+  if (inp) {
+    inp.value = "";
+    inp.focus();
+  }
+  const go = document.getElementById("topo-del-go-" + blockId);
+  if (go) {
+    go.disabled = true;
+    go.classList.remove("btn-success");
+    go.classList.add("btn-danger");
+  }
+}
+
+function hideTopoDeleteUI(blockId) {
+  const w = document.getElementById("topo-del-wrap-" + blockId);
+  if (w) w.classList.add("d-none");
+}
+
+function validateTopoDeleteInput(blockId) {
+  const inp = document.getElementById("topo-del-inp-" + blockId);
+  const go = document.getElementById("topo-del-go-" + blockId);
+  if (!inp || !go) return;
+  const ok = inp.value.toLowerCase().trim() === "ta bort";
+  go.disabled = !ok;
+  go.classList.toggle("btn-success", ok);
+  go.classList.toggle("btn-danger", !ok);
+}
+
+function executeClearTopo(blockId) {
+  const go = document.getElementById("topo-del-go-" + blockId);
+  if (go) {
+    go.disabled = true;
+    go.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  }
   google.script.run
     .withSuccessHandler(res => {
-      btn.disabled = false;
-      btn.innerHTML = t;
+      if (go) {
+        go.innerHTML = "OK";
+        go.disabled = false;
+      }
       if (res && res.success) {
         const b = db.blocks.find(x => String(x.ID) === String(blockId));
         if (b) b.DriveID = "";
-        showToast("Topo borttagen från crag.");
-        if (__adminEditingCragId) editCragAdmin(__adminEditingCragId);
+        hideTopoDeleteUI(blockId);
+        showToast("Topo borttagen.");
+        if (__adminEditingCragId && document.getElementById("admin-routes-list")) {
+          refreshAdminRoutesListForCurrentCrag();
+        } else if (__adminEditingCragId) {
+          editCragAdmin(__adminEditingCragId);
+        }
       } else {
         showToast("Kunde inte ta bort topo.");
+        if (go) go.disabled = false;
       }
     })
     .withFailureHandler(() => {
-      btn.disabled = false;
-      btn.innerHTML = t;
+      if (go) {
+        go.innerHTML = "OK";
+        go.disabled = false;
+      }
+      showToast("Nätverksfel.");
     })
     .clearBlockTopo(blockId);
 }
 
 function showBlockDeleteUI(blockId) {
+  hideTopoDeleteUI(blockId);
   const w = document.getElementById("block-del-wrap-" + blockId);
   if (!w) return;
   w.classList.remove("d-none");
@@ -2387,11 +2483,81 @@ function deleteLocationAction(id) {
 }
 
 
-// Anropa när crag-koordinater sätts via kartan
-function setCragCoordinates(lat, lng) {
-  document.getElementById('new-loc-lat').value = lat;
-  document.getElementById('new-loc-lng').value = lng;
-  validateNewCragForm();
+function fillEditLocCoordsFromGeoloc(mode) {
+  if (!navigator.geolocation) {
+    showToast("Plats stöds inte i webbläsaren.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+      var ctx = window.__editLocPicker;
+      if (mode === "crag") {
+        var la = document.getElementById("edit-loc-lat");
+        var ln = document.getElementById("edit-loc-lng");
+        if (la) la.value = lat.toFixed(6);
+        if (ln) ln.value = lng.toFixed(6);
+        if (ctx && ctx.sMarker) {
+          ctx.sMarker.position = { lat: lat, lng: lng };
+          if (ctx.map) ctx.map.panTo({ lat: lat, lng: lng });
+        }
+      } else {
+        var pla = document.getElementById("edit-loc-plat");
+        var pln = document.getElementById("edit-loc-plng");
+        if (pla) pla.value = lat.toFixed(6);
+        if (pln) pln.value = lng.toFixed(6);
+        if (ctx && ctx.pMarker) {
+          if (!ctx.pMarker.map) ctx.pMarker.map = ctx.map;
+          ctx.pMarker.position = { lat: lat, lng: lng };
+          if (ctx.map) ctx.map.panTo({ lat: lat, lng: lng });
+        }
+      }
+      showToast("Position hämtad.");
+    },
+    function () {
+      showToast("Kunde inte hämta position. Kontrollera behörigheter.");
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function fillNewLocCoordsFromGeoloc(mode) {
+  if (!navigator.geolocation) {
+    showToast("Plats stöds inte i webbläsaren.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+      var ctx = window.__newLocPicker;
+      if (mode === "crag") {
+        var la = document.getElementById("new-loc-lat");
+        var ln = document.getElementById("new-loc-lng");
+        if (la) la.value = lat.toFixed(6);
+        if (ln) ln.value = lng.toFixed(6);
+        if (ctx && ctx.sMarker) {
+          ctx.sMarker.position = { lat: lat, lng: lng };
+          if (ctx.map) ctx.map.panTo({ lat: lat, lng: lng });
+        }
+      } else {
+        var pla = document.getElementById("new-loc-plat");
+        var pln = document.getElementById("new-loc-plng");
+        if (pla) pla.value = lat.toFixed(6);
+        if (pln) pln.value = lng.toFixed(6);
+        if (ctx && ctx.pMarker) {
+          ctx.pMarker.position = { lat: lat, lng: lng };
+          if (ctx.map) ctx.map.panTo({ lat: lat, lng: lng });
+        }
+      }
+      showToast("Position hämtad.");
+    },
+    function () {
+      showToast("Kunde inte hämta position. Kontrollera behörigheter.");
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
 }
 
 async function renderCreateLocation() {
@@ -2422,11 +2588,13 @@ async function renderCreateLocation() {
             <label class="text-danger" style="font-size:0.6rem; font-weight:bold;">CRAG (C)</label>
             <input id="new-loc-lat" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary small" placeholder="Lat">
             <input id="new-loc-lng" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary small mt-1" placeholder="Lng">
+            <button type="button" class="btn btn-outline-danger btn-sm w-100 mt-1 py-1" style="font-size:0.65rem;" onclick="fillNewLocCoordsFromGeoloc('crag')">Från min position</button>
           </div>
           <div class="col-6">
             <label class="text-primary" style="font-size:0.6rem; font-weight:bold;">PARKERING (P)</label>
             <input id="new-loc-plat" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary small" placeholder="Lat">
             <input id="new-loc-plng" type="text" inputmode="decimal" class="form-control form-control-sm bg-white text-dark border-secondary small mt-1" placeholder="Lng">
+            <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-1 py-1" style="font-size:0.65rem;" onclick="fillNewLocCoordsFromGeoloc('park')">Från min position</button>
           </div>
         </div>
 
@@ -2444,9 +2612,11 @@ async function renderCreateLocation() {
       center: vastervik, 
       disableDefaultUI: true, 
       zoomControl: true, 
-      mapId: "PICKER_MAP_ID", // KRÄVS för Advanced Markers
-      mapTypeId: 'terrain'
+      mapId: "PICKER_MAP_ID",
+      mapTypeId: 'terrain',
+      gestureHandling: 'greedy'
     });
+    pickerMap.setOptions({ gestureHandling: 'greedy' });
 
     // Skapa de två pinnarna (dolda från början tills man klickar)
     const sMarker = new AdvancedMarkerElement({
@@ -2476,6 +2646,8 @@ async function renderCreateLocation() {
         document.getElementById('new-loc-plng').value = pos.lng().toFixed(6);
       }
     });
+
+    window.__newLocPicker = { map: pickerMap, sMarker: sMarker, pMarker: pMarker };
   }, 50);
 }
 
@@ -2596,7 +2768,7 @@ function startInternalNav(locId) {
         document.body.appendChild(infoDiv);
       }
 
-      // Här använder vi SVG istället för emojis för en renare look
+      var satLabel = window.__usingSatelliteLayer ? "Karta" : "Satellit";
       infoDiv.innerHTML = `
         <div style="display:flex; align-items:center; gap:12px;">
           <div id="compass-circle" style="width: 50px; height: 50px; background: #0d6efd; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4); transition: transform 0.1s linear;">
@@ -2610,7 +2782,10 @@ function startInternalNav(locId) {
             <span style="font-size:1.3rem; color:#333; font-weight:900;">${dist}</span>
           </div>
         </div>
-        <button onclick="stopNav()" style="border:none; background:#eee; color:#444; border-radius:50%; width:30px; height:30px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" id="nav-sat-toggle" onclick="toggleMainMapSatellite();" style="border:none; background:#e7f1ff; color:#0d6efd; border-radius:20px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;">${satLabel}</button>
+          <button type="button" onclick="stopNav()" style="border:none; background:#eee; color:#444; border-radius:50%; width:30px; height:30px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+        </div>
       `;
       
       updateCompassRotation();
@@ -2663,16 +2838,6 @@ function updateCompassRotation() {
   compassCircle.style.transform = `rotate(${visualRotation}deg)`;
 }
 
-function stopNav() {
-  if (watchId) navigator.geolocation.clearWatch(watchId);
-  window.removeEventListener('deviceorientationabsolute', handleOrientation);
-  window.removeEventListener('deviceorientation', handleOrientation);
-  if (userMarker) userMarker.setMap(null);
-  const overlay = document.getElementById('nav-overlay');
-  if (overlay) overlay.remove();
-  markers.forEach(m => m.setMap(map));
-}
-
 // Matte för avståndet
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -2686,14 +2851,22 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 function stopNav() {
-  if (watchId) navigator.geolocation.clearWatch(watchId);
-  if (userMarker) userMarker.setMap(null);
-  const overlay = document.getElementById('nav-overlay');
+  if (watchId) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  window.removeEventListener("deviceorientationabsolute", handleOrientation, true);
+  window.removeEventListener("deviceorientation", handleOrientation, true);
+  if (userMarker) {
+    userMarker.setMap(null);
+    userMarker = null;
+  }
+  var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
-  
-  // Återställ alla nålar på kartan
-  markers.forEach(m => m.map = map);
-  map.setZoom(11); // Eller vad din default-zoom är
+  markers.forEach(function (m) {
+    m.map = map;
+  });
+  if (map) map.setZoom(11);
 }
 
 // I Index.html (script-delen)
