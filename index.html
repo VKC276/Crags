@@ -19,8 +19,31 @@
         left: 0;
         right: 0;
         padding: 0 15px;
-        z-index: 1100; /* Högre än kartan */
+        z-index: 2100; /* Över kartan och under/ jämte inget som täcker söket */
         pointer-events: none;
+    }
+    .floating-search-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+        max-width: 100%;
+    }
+    .floating-search-row .search-box {
+        flex: 1 1 180px;
+        min-width: 0;
+    }
+    .map-sat-toggle-btn {
+        pointer-events: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0 12px;
+        min-height: 44px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }
     .search-box {
         background: white;
@@ -248,9 +271,24 @@
     white-space: nowrap;
 }
 
+/* Block-redigering: samma knapphöjd för blå och röda åtgärder */
+#app-admin .block-toolbar-primary .btn,
+#app-admin .block-toolbar-danger .btn {
+  min-height: 2.375rem;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+#app-admin .block-toolbar-danger {
+  min-width: min(100%, 11rem);
+}
+
 /* Större träffyta på mobil (ca 48px rekommenderas för touch) */
 @media (max-width: 768px) {
-  #app-admin .admin-action-btn {
+  #app-admin .admin-action-btn,
+  #app-admin .block-toolbar-primary .btn,
+  #app-admin .block-toolbar-danger .btn {
     min-height: 48px;
     padding-top: 0.65rem !important;
     padding-bottom: 0.65rem !important;
@@ -361,22 +399,23 @@
 <div id="app-public" style="display: block; width: 100%; height: 100%; position: relative; overflow: hidden;">
   
   <div class="floating-search-wrapper">
-  <div class="search-box shadow">
-    <span class="search-icon">🔍</span>
-    <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
-    <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
-    
-    <div class="admin-trigger" onclick="toggleAdmin(true)">
-      ⚙️
+    <div class="floating-search-row">
+      <div class="search-box shadow">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
+        <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
+        <div class="admin-trigger" onclick="toggleAdmin(true)">
+          ⚙️
+        </div>
+      </div>
+      <button type="button" id="btn-toggle-satellite" class="btn btn-light btn-sm border map-sat-toggle-btn" onclick="toggleMainMapSatellite()"
+              style="display: block;"
+              aria-pressed="false" title="Växla satellit / karta">Satellit</button>
     </div>
   </div>
-</div>
 
   <div id="view-map" style="height: 100%; width: 100%;">
     <div id="map-canvas" style="height: 100%;"></div>
-    <button type="button" id="btn-toggle-satellite" class="btn btn-light btn-sm shadow-sm border fw-bold" onclick="toggleMainMapSatellite()"
-            style="display: block; position: absolute; bottom: 88px; right: 12px; z-index: 5; font-size: 0.7rem; padding: 8px 10px; border-radius: 8px;"
-            aria-pressed="false" title="Växla satellit / karta">Satellit</button>
   </div>
   
   <div id="view-list" style="display: none; height: 100%; overflow-y: auto; padding: 90px 15px 100px 15px; background: #f8f9fa;">
@@ -1165,7 +1204,67 @@ function handlePasswordChange() {
     .finalizeUserPassword(currentUser.username, p1);
 }
 
+function handleChangeOwnPassword() {
+  var curEl = document.getElementById("own-pw-current");
+  var p1El = document.getElementById("own-pw-new1");
+  var p2El = document.getElementById("own-pw-new2");
+  var err = document.getElementById("own-pw-error");
+  var btn = document.getElementById("own-pw-btn");
+  if (!curEl || !p1El || !p2El || !err || !btn) return;
 
+  var cur = curEl.value;
+  var p1 = p1El.value;
+  var p2 = p2El.value;
+  err.style.display = "none";
+  err.textContent = "";
+
+  if (!cur) {
+    err.textContent = "Ange nuvarande lösenord.";
+    err.style.display = "block";
+    return;
+  }
+  if (!p1 || !p2) {
+    err.textContent = "Fyll i nytt lösenord i båda fälten.";
+    err.style.display = "block";
+    return;
+  }
+  if (p1.length < 6) {
+    err.textContent = "Nytt lösenord måste vara minst 6 tecken.";
+    err.style.display = "block";
+    return;
+  }
+  if (p1 !== p2) {
+    err.textContent = "De nya lösenorden matchar inte.";
+    err.style.display = "block";
+    return;
+  }
+
+  var t = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sparar...';
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      btn.innerHTML = t;
+      if (res && res.success) {
+        curEl.value = "";
+        p1El.value = "";
+        p2El.value = "";
+        showToast("Lösenord uppdaterat.");
+      } else {
+        err.textContent = (res && res.msg) ? res.msg : "Kunde inte byta lösenord.";
+        err.style.display = "block";
+      }
+    })
+    .withFailureHandler(function () {
+      btn.disabled = false;
+      btn.innerHTML = t;
+      err.textContent = "Nätverksfel.";
+      err.style.display = "block";
+    })
+    .changeOwnPassword(cur, p1);
+}
 
 function renderForcePasswordChange() {
   const adminApp = document.getElementById('app-admin');
@@ -1246,8 +1345,23 @@ function renderAdminHome() {
     ? renderUserManagement() 
     : '';
 
+  const changeOwnPasswordHtml = `
+    <div class="card bg-light text-dark border-secondary mb-4 shadow-sm">
+      <div class="card-body p-3">
+        <h6 class="text-secondary small fw-bold text-uppercase mb-2">Byt lösenord</h6>
+        <p class="small text-muted mb-2">Kräver ditt nuvarande lösenord.</p>
+        <input type="password" id="own-pw-current" class="form-control form-control-sm bg-white text-dark border-secondary mb-2" placeholder="Nuvarande lösenord" autocomplete="current-password">
+        <input type="password" id="own-pw-new1" class="form-control form-control-sm bg-white text-dark border-secondary mb-2" placeholder="Nytt lösenord" autocomplete="new-password">
+        <input type="password" id="own-pw-new2" class="form-control form-control-sm bg-white text-dark border-secondary mb-2" placeholder="Upprepa nytt lösenord" autocomplete="new-password">
+        <div id="own-pw-error" class="text-danger small mb-2" style="display:none;"></div>
+        <button type="button" class="btn btn-outline-secondary btn-sm w-100 fw-bold admin-action-btn" onclick="handleChangeOwnPassword()" id="own-pw-btn">Spara nytt lösenord</button>
+      </div>
+    </div>
+  `;
+
   // 5. Skriv NU bara till admin-main (så knapparna högst upp stannar kvar)
   container.innerHTML = `
+    ${changeOwnPasswordHtml}
     ${createBtnHtml}
     <h6 class="text-muted small mb-2 text-uppercase">Crags</h6>
     ${locationsHtml}
@@ -1855,15 +1969,16 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
             <label class="text-muted small d-block mb-1" style="font-size:0.65rem;">BLOCKNAMN</label>
             <input type="text" class="form-control form-control-sm bg-white text-dark border-secondary" id="block-name-${block.ID}" value="${escapeHtmlAttr(block.Namn)}">
           </div>
-          <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between w-100">
-            <div class="d-flex flex-wrap gap-1 align-items-center">
+          <div class="d-flex flex-wrap gap-3 justify-content-between align-items-start w-100">
+            <div class="d-flex flex-column gap-1 block-toolbar-primary ${(block.DriveID || isSuper) ? 'flex-grow-1' : 'w-100'}" style="min-width: 140px; max-width: 100%;">
               <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="saveBlockName('${block.ID}', this)">Spara namn</button>
               <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="triggerUpload('${block.ID}', this)">${block.DriveID ? 'Byt topo' : 'Lägg till topo'}</button>
             </div>
-            <div class="d-flex flex-wrap gap-1 align-items-center justify-content-end">
+            ${(block.DriveID || isSuper) ? `
+            <div class="d-flex flex-column gap-1 align-items-stretch block-toolbar-danger flex-grow-0">
               ${block.DriveID ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showTopoDeleteUI('${block.ID}')">Ta bort topo</button>` : ''}
               ${isSuper ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showBlockDeleteUI('${block.ID}')">Radera block</button>` : ''}
-            </div>
+            </div>` : ''}
           </div>
           ${block.DriveID ? `
           <div id="topo-del-wrap-${block.ID}" class="d-none mt-2 p-2 rounded border border-danger bg-danger bg-opacity-10">
