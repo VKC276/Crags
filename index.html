@@ -50,7 +50,7 @@
   opacity: 1;
 }
 
-/* Bottom nav: MAP | LIST + satellit (höger, bara i kartläge) */
+/* Bottom nav: MAP (byt karttyp när aktiv) | LIST */
 .modern-nav {
   position: fixed;
   bottom: 25px;
@@ -69,17 +69,6 @@
   padding: 5px;
   gap: 0;
 }
-/* Diskret etikett på MAP när kartvyn är aktiv (växlar karttyp vid klick) */
-.nav-label.nav-label--maptype {
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  text-transform: none;
-  line-height: 1.15;
-  text-align: center;
-  max-width: 4.6rem;
-}
-
 /* Grundstilen för knapparna */
 .nav-item {
   flex: 1;
@@ -790,20 +779,17 @@ function onNavMapKeydown(ev) {
   onNavMapClick();
 }
 
-/** Uppdaterar MAP-radens etikett: kort "MAP" i listvy, diskret karttyp-text i kartvy. */
+/** MAP-etiketten ser alltid ut som tidigare; i kartvy beskriver aria/title att klick byter karttyp. */
 function updateNavMapNavUi() {
   var navMap = document.getElementById("nav-map");
   var label = document.getElementById("nav-map-label");
   if (!navMap || !label) return;
   var mapActive = navMap.classList.contains("active");
+  label.textContent = "MAP";
   if (mapActive) {
-    label.textContent = "MAP";
-    label.classList.add("nav-label--maptype");
-    navMap.setAttribute("aria-label", "Change map typ: satellite or stock");
-    navMap.title = "Press för satellite or stock map";
+    navMap.setAttribute("aria-label", "Byt karttyp: satellit eller standardkarta");
+    navMap.title = "Tryck för satellit eller standardkarta";
   } else {
-    label.textContent = "MAP";
-    label.classList.remove("nav-label--maptype");
     navMap.setAttribute("aria-label", "Visa karta");
     navMap.removeAttribute("title");
   }
@@ -1065,6 +1051,7 @@ function openLoginPanel() {
   const pwInput = document.getElementById('admin-pw');
   if (!panel || !userInput || !pwInput) return;
 
+  hideGlobalToast();
   pwInput.value = '';
   document.getElementById('login-error').style.display = 'none';
   panel.style.left = '0';
@@ -1087,7 +1074,8 @@ function checkLogin() {
   const pw = pwInput.value.trim();
 
   if (!user || !pw) {
-    showToast("⚠️ Fyll i både användarnamn och lösenord.");
+    error.style.display = 'block';
+    error.innerHTML = "⚠️ Fyll i både användarnamn och lösenord.";
     return;
   }
 
@@ -1120,6 +1108,7 @@ function checkLogin() {
       if (res && res.authorized) {
         currentUser = res; 
         isAdminLoggedIn = true;
+        hideGlobalToast();
         // Stäng login-panelen
         const loginPanel = document.getElementById('login-panel');
         if (loginPanel) loginPanel.style.left = '-100%';
@@ -3233,16 +3222,33 @@ function logoutAdmin() {
 
 
 
+var __toastHideTimer = null;
+
+function hideGlobalToast() {
+  var toast = document.getElementById('global-toast');
+  if (__toastHideTimer) {
+    clearTimeout(__toastHideTimer);
+    __toastHideTimer = null;
+  }
+  if (toast) toast.classList.remove('show');
+}
+
 function showToast(message, duration = 3000) {
-  const toast = document.getElementById('global-toast');
-  const msgSpan = document.getElementById('toast-msg');
-  
+  var toast = document.getElementById('global-toast');
+  var msgSpan = document.getElementById('toast-msg');
+  if (!toast || !msgSpan) return;
+
+  if (__toastHideTimer) {
+    clearTimeout(__toastHideTimer);
+    __toastHideTimer = null;
+  }
+
   msgSpan.innerText = message;
   toast.classList.add('show');
 
-  // Ta bort den automatiskt efter vald tid
-  setTimeout(() => {
+  __toastHideTimer = setTimeout(function () {
     toast.classList.remove('show');
+    __toastHideTimer = null;
   }, duration);
 }
 
