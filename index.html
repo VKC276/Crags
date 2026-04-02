@@ -132,6 +132,15 @@
       flex-direction: column;
     }
     #panel.open { transform: translateY(0); }
+    /* När crag-kortet är öppet: göm sök och låt panelen gå ända upp (sök är dolt) */
+    body.crag-panel-open #app-public .floating-search-wrapper {
+      display: none;
+    }
+    body.crag-panel-open #panel {
+      top: env(safe-area-inset-top, 0px);
+      height: calc(100vh - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    }
     #panel #panel-body { flex: 1; min-height: 0; overflow-y: auto; }
     .panel-header { flex-shrink: 0; padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 20px 20px 0 0; }
     .type-label { font-size: 0.75rem; color: #666; font-weight: bold; text-transform: uppercase; margin-left: 5px; }
@@ -748,13 +757,13 @@ function initMap() {
           const sectorBlocks = db.blocks.filter(b => String(b.CragID) === String(loc.ID));
           const matchCount = db.problems.filter(p => {
             const isMyBlock = sectorBlocks.some(b => String(b.ID) === String(p.BlockID));
-            return isMyBlock && (p.Namn.toLowerCase().includes(q) || p.Grad.toLowerCase().startsWith(q));
+            return isMyBlock && routeMatchesSearchQuery(p, q);
           }).length;
           if (matchCount > 0) detailText = `🎯 ${matchCount} matchin routes`;
         }
 
         return `
-          <div class="crag-card shadow-sm border-0 mb-2 p-3 bg-white rounded" onclick="openCrag('${loc.ID}', '${q}')" style="cursor:pointer;">
+          <div class="crag-card shadow-sm border-0 mb-2 p-3 bg-white rounded" onclick="openCrag('${loc.ID}')" style="cursor:pointer;">
             <div class="d-flex align-items-center">
               <span class="status-badge bg-${String(loc.Status).toLowerCase()}"></span>
               <div class="flex-grow-1">
@@ -986,13 +995,46 @@ function filterData() {
 
 
     // 4. ÖPPNA SEKTOR (DETALJER)
-function openCrag(id, query = "") {
-  const q = query.toLowerCase().trim();
+/** Samma logik som filterData för led-matchning (namn, grad prefix, typ) */
+function routeMatchesSearchQuery(r, q) {
+  const qq = String(q || "").toLowerCase().trim();
+  if (!qq) return false;
+  const name = (r.Namn || "").toLowerCase();
+  const grade = (r.Grad || "").toLowerCase();
+  const type = (r.Typ || "").toLowerCase();
+  return name.includes(qq) || grade.startsWith(qq) || type.includes(qq);
+}
+
+function openCrag(id, query) {
   const loc = db.locations.find(l => String(l.ID).trim() === String(id).trim());
   if (!loc) return;
 
+  let q = "";
+  if (query !== undefined && query !== null && String(query).length > 0) {
+    q = String(query).toLowerCase().trim();
+  } else {
+    const inp = document.getElementById("mainSearch");
+    if (inp) q = String(inp.value || "").toLowerCase().trim();
+  }
+
   document.getElementById('panel-title').innerText = loc.Namn;
   const cragBlocks = db.blocks.filter(b => String(b.CragID).trim() === String(id).trim());
+
+  let firstMatchRouteId = null;
+  if (q !== "") {
+    outer: for (let bi = 0; bi < cragBlocks.length; bi++) {
+      const block = cragBlocks[bi];
+      const routes = db.problems
+        .filter(p => String(p.BlockID).trim() === String(block.ID).trim())
+        .sort((a, b) => String(a.StartOrder || "99").localeCompare(String(b.StartOrder || "99"), undefined, { numeric: true }));
+      for (let ri = 0; ri < routes.length; ri++) {
+        if (routeMatchesSearchQuery(routes[ri], q)) {
+          firstMatchRouteId = routes[ri].ID;
+          break outer;
+        }
+      }
+    }
+  }
   
   // --- ACCESS INFO ---
   let accessHtml = "";
@@ -1055,11 +1097,8 @@ function openCrag(id, query = "") {
 
         <div class="ps-1">
          ${routes.length > 0 ? routes.map(r => {
- const isMatch = q !== "" && (
-  r.Namn.toLowerCase().includes(q) || 
-  r.Grad.toLowerCase().includes(q) || 
-  (r.Typ || "").toLowerCase().trim().includes(q)
-);
+ const isMatch = routeMatchesSearchQuery(r, q);
+ const firstAttr = firstMatchRouteId != null && String(r.ID) === String(firstMatchRouteId) ? ' id="panel-first-search-match"' : "";
   
   // Vi kollar både Typ och typ för att vara helt säkra
   const displayTyp = r.Typ || r.typ || ""; 
@@ -1070,7 +1109,7 @@ function openCrag(id, query = "") {
   }
 
   return `
-    <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light"
+    <div class="route-item d-flex justify-content-between align-items-center py-2 border-bottom border-light"${firstAttr}
        style="cursor: pointer; ${isMatch ? 'background-color: #e8f5e9;' : ''}"
        data-comment="${(r.Kommentar || '').replace(/"/g, '&quot;')}"
        onclick="openCommentCardFromEl(this)">
@@ -1110,12 +1149,28 @@ function openCrag(id, query = "") {
   });
 
   document.getElementById('panel-body').innerHTML = html;
+  document.body.classList.add("crag-panel-open");
   document.getElementById('panel').classList.add('open');
   document.getElementById('panel-body').scrollTop = 0;
+
+  if (q !== "" && firstMatchRouteId != null) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        var el = document.getElementById("panel-first-search-match");
+        var body = document.getElementById("panel-body");
+        if (el && body) {
+          el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
+        }
+      });
+    });
+  }
 }
 
 
-    function closePanel() { document.getElementById('panel').classList.remove('open'); }
+    function closePanel() {
+      document.getElementById('panel').classList.remove('open');
+      document.body.classList.remove("crag-panel-open");
+    }
 
     // 5. ADMIN LOGIK
   let isAdminLoggedIn = false; // Håller koll på om vi är inloggade
