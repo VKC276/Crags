@@ -818,7 +818,48 @@ function toggleMainMapSatellite() {
   syncSatelliteToggleUi();
 }
 
-  
+function syncAdminPickerSatelliteButton(buttonId, usingSat) {
+  var btn = document.getElementById(buttonId);
+  if (!btn) return;
+  btn.textContent = usingSat ? "Karta" : "Satellit";
+  btn.setAttribute("aria-pressed", usingSat ? "true" : "false");
+}
+
+function toggleEditLocPickerSatellite() {
+  var ctx = window.__editLocPicker;
+  if (!ctx || !ctx.map || typeof ctx.map.setMapTypeId !== "function") return;
+  if (ctx.usingSatellite) {
+    ctx.map.setMapTypeId(ctx.mapTypeBeforeSatellite || "terrain");
+    ctx.usingSatellite = false;
+  } else {
+    try {
+      ctx.mapTypeBeforeSatellite = ctx.map.getMapTypeId && ctx.map.getMapTypeId() ? ctx.map.getMapTypeId() : "terrain";
+    } catch (e) {
+      ctx.mapTypeBeforeSatellite = "terrain";
+    }
+    ctx.map.setMapTypeId("hybrid");
+    ctx.usingSatellite = true;
+  }
+  syncAdminPickerSatelliteButton("edit-map-sat-toggle", ctx.usingSatellite);
+}
+
+function toggleNewLocPickerSatellite() {
+  var ctx = window.__newLocPicker;
+  if (!ctx || !ctx.map || typeof ctx.map.setMapTypeId !== "function") return;
+  if (ctx.usingSatellite) {
+    ctx.map.setMapTypeId(ctx.mapTypeBeforeSatellite || "terrain");
+    ctx.usingSatellite = false;
+  } else {
+    try {
+      ctx.mapTypeBeforeSatellite = ctx.map.getMapTypeId && ctx.map.getMapTypeId() ? ctx.map.getMapTypeId() : "terrain";
+    } catch (e) {
+      ctx.mapTypeBeforeSatellite = "terrain";
+    }
+    ctx.map.setMapTypeId("hybrid");
+    ctx.usingSatellite = true;
+  }
+  syncAdminPickerSatelliteButton("new-map-sat-toggle", ctx.usingSatellite);
+}
 
 function filterData() {
   closePanel();
@@ -1724,6 +1765,11 @@ async function renderEditLocation(id) {
         <label class="small text-muted fw-bold text-uppercase" style="font-size:0.65rem;">Cragens namn</label>
         <input id="edit-loc-name" type="text" class="form-control bg-white text-dark border-bottom border-top-0 border-start-0 border-end-0 rounded-0 px-0 mb-3 fw-bold" value="${escapeHtmlAttr(loc.Namn)}">
 
+        <div class="d-flex justify-content-end align-items-center mb-1">
+          <button type="button" id="edit-map-sat-toggle" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                  style="font-size:0.7rem; font-weight:700;" onclick="toggleEditLocPickerSatellite()"
+                  aria-pressed="false" title="Växla satellit och karta">Satellit</button>
+        </div>
         <div id="edit-map-picker" style="height: 250px; background: #222; border-radius: 8px;" class="mb-3 border-0"></div>
 
         <div class="btn-group w-100 mb-3 shadow-sm">
@@ -1771,7 +1817,7 @@ async function renderEditLocation(id) {
       center: startPos,
       mapId: "ADMIN_MAP_PICKER",
       disableDefaultUI: true,
-      zoomControl: true,
+      zoomControl: false,
       mapTypeId: 'terrain',
       gestureHandling: 'greedy'
     });
@@ -1795,7 +1841,14 @@ async function renderEditLocation(id) {
       pMarker.map = pickerMap;
     }
 
-    window.__editLocPicker = { map: pickerMap, sMarker, pMarker };
+    window.__editLocPicker = {
+      map: pickerMap,
+      sMarker,
+      pMarker,
+      usingSatellite: false,
+      mapTypeBeforeSatellite: "terrain"
+    };
+    syncAdminPickerSatelliteButton("edit-map-sat-toggle", false);
 
     function syncMarkersFromInputs() {
       const ctx = window.__editLocPicker;
@@ -2702,6 +2755,11 @@ async function renderCreateLocation() {
         <label class="small text-muted mb-1">Namn på Cragen</label>
         <input id="new-loc-name" type="text" class="form-control bg-light text-dark border-secondary mb-3" placeholder="t.ex. Dynestad">
 
+        <div class="d-flex justify-content-end align-items-center mb-1">
+          <button type="button" id="new-map-sat-toggle" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                  style="font-size:0.7rem; font-weight:700;" onclick="toggleNewLocPickerSatellite()"
+                  aria-pressed="false" title="Växla satellit och karta">Satellit</button>
+        </div>
         <div id="map-picker" style="height: 250px; background: #222; border-radius: 8px;" class="mb-3 border border-secondary"></div>
 
         <div class="btn-group w-100 mb-3" role="group">
@@ -2741,7 +2799,7 @@ async function renderCreateLocation() {
       zoom: 11, 
       center: vastervik, 
       disableDefaultUI: true, 
-      zoomControl: true, 
+      zoomControl: false, 
       mapId: "PICKER_MAP_ID",
       mapTypeId: 'terrain',
       gestureHandling: 'greedy'
@@ -2777,7 +2835,14 @@ async function renderCreateLocation() {
       }
     });
 
-    window.__newLocPicker = { map: pickerMap, sMarker: sMarker, pMarker: pMarker };
+    window.__newLocPicker = {
+      map: pickerMap,
+      sMarker: sMarker,
+      pMarker: pMarker,
+      usingSatellite: false,
+      mapTypeBeforeSatellite: "terrain"
+    };
+    syncAdminPickerSatelliteButton("new-map-sat-toggle", false);
   }, 50);
 }
 
