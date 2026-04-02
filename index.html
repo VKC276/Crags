@@ -590,6 +590,44 @@
 
 let currentUser = { authorized: false, role: null, username: null };
 
+/** Normaliserad roll: superadmin | admin | developer (tomt i ark → admin) */
+function userRole_() {
+  var r = String(currentUser && currentUser.role != null ? currentUser.role : "").toLowerCase().trim();
+  return r || "admin";
+}
+
+function canManageUsersRole() {
+  return userRole_() === "superadmin";
+}
+
+/** Admin + superadmin: får radera crag/block/led/topo */
+function canDeleteContentRole() {
+  var r = userRole_();
+  return r === "superadmin" || r === "admin";
+}
+
+/** Alla inloggade roller: skapa/redigera crag, block, leder */
+function canCreateAndEditCragContentRole() {
+  var r = userRole_();
+  return r === "superadmin" || r === "admin" || r === "developer";
+}
+
+function adminRoleLabelSv() {
+  var r = userRole_();
+  if (r === "superadmin") return "Superadmin";
+  if (r === "admin") return "Admin";
+  if (r === "developer") return "Utvecklare";
+  return "Admin";
+}
+
+function formatAdminRoleLabel_(r) {
+  var x = String(r || "").toLowerCase().trim();
+  if (x === "superadmin") return "Superadmin";
+  if (x === "admin") return "Admin";
+  if (x === "developer") return "Utvecklare";
+  return String(r || "");
+}
+
 function escapeHtmlAttr(str) {
   return String(str == null ? "" : str)
     .replace(/&/g, "&amp;")
@@ -1125,28 +1163,29 @@ function checkLogin() {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Verifierar...';
   error.style.display = 'none';
 
-// --- HÄR STARTAR NÖDBROMSEN ---
-  const timeoutSafety = setTimeout(function() {
-    if (btn.disabled) { // Om knappen fortfarande är låst efter 10 sekunder
+  // GAS kan vara långsam vid kallstart — rensas alltid när svar kommer (success/fail)
+  var loginTimeoutMs = 60000;
+  var timeoutSafety = setTimeout(function() {
+    if (btn.disabled) {
       btn.disabled = false;
       btn.innerHTML = 'Logga in';
       error.style.display = 'block';
       error.innerHTML = "⚠️ Anslutningen tog för lång tid. Kontrollera internet eller försök igen.";
-      console.warn("Inloggningen avbröts av timeout (10s)");
+      console.warn("Inloggningen avbröts av timeout (" + loginTimeoutMs / 1000 + "s)");
     }
-  }, 10000); 
-  // --- SLUT PÅ NÖDBROMS ---
-
+  }, loginTimeoutMs);
 
   google.script.run
     .withSuccessHandler(function(res) {
-      // 2. ÅTERSTÄLL ALLTID KNAPPEN HÄR (så den inte snurrar för evigt)
+      clearTimeout(timeoutSafety);
+
       btn.disabled = false;
       btn.innerHTML = 'Logga in';
-      
+
       console.log("SERVER-SVAR:", res);
-      
+
       if (res && res.authorized) {
+        error.style.display = 'none';
         currentUser = res; 
         isAdminLoggedIn = true;
         hideGlobalToast();
@@ -1175,7 +1214,7 @@ function checkLogin() {
       }
     })
     .withFailureHandler(function(err) {
-      // 4. ÅTERSTÄLL ÄVEN VID KRITISKT SERVERFEL
+      clearTimeout(timeoutSafety);
       btn.disabled = false;
       btn.innerHTML = 'Logga in';
       error.style.display = 'block';
@@ -1367,12 +1406,13 @@ function renderAdminHome() {
     container = document.getElementById('admin-main');
   }
 
-  // 3. Logik för knappar (Superadmin-koll)
-  const createBtnHtml = currentUser.role === 'superadmin' 
+  const createBtnHtml = canCreateAndEditCragContentRole()
     ? `<div class="d-grid gap-2 mb-4">
          <button type="button" class="btn btn-primary fw-bold admin-action-btn" onclick="renderCreateLocation()">+ Skapa crag</button>
-       </div>` 
-    : '';
+       </div>`
+    : "";
+
+  const roleLineHtml = `<p class="small text-white-50 mb-2">${escapeHtmlAttr(currentUser.name || currentUser.username || "")} · <span class="text-info fw-bold">${escapeHtmlAttr(adminRoleLabelSv())}</span></p>`;
 
   // 4. Bygg listan på sektorer
   const locationsHtml = (db && db.locations) ? db.locations.map(loc => `
@@ -1384,17 +1424,17 @@ function renderAdminHome() {
         </div>
         <div class="d-flex">
           <button class="btn btn-sm btn-outline-info ms-2" onclick="renderEditLocation('${loc.ID}')">⚙️</button>
-          ${currentUser.role === 'superadmin' ? 
-            `<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="openCragDeleteOverlay('${loc.ID}')" title="Radera crag">🗑️</button>` : '' 
-          }
+          ${canDeleteContentRole()
+            ? `<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="openCragDeleteOverlay('${loc.ID}')" title="Radera crag">🗑️</button>`
+            : ""}
         </div>
       </div>
     </div>
   `).join('') : '';
 
-  const userManagementHtml = (typeof renderUserManagement === "function" && currentUser.role === 'superadmin') 
-    ? renderUserManagement() 
-    : '';
+  const userManagementHtml = (typeof renderUserManagement === "function" && canManageUsersRole())
+    ? renderUserManagement()
+    : "";
 
   const changePwdRevealHtml = `
     <button type="button" id="own-pw-reveal-btn" class="btn btn-primary btn-sm w-100 fw-bold admin-action-btn mb-2" onclick="toggleOwnPasswordPanel()">Byt lösenord</button>
@@ -1416,6 +1456,7 @@ function renderAdminHome() {
 
   // 5. Skriv NU bara till admin-main (så knapparna högst upp stannar kvar)
   container.innerHTML = `
+    ${roleLineHtml}
     ${changePwdRevealHtml}
     ${changeOwnPasswordHtml}
     ${createBtnHtml}
@@ -1426,7 +1467,7 @@ function renderAdminHome() {
 }
 
 function renderUserManagement() {
-  if (currentUser.role !== 'superadmin') return ''; 
+  if (!canManageUsersRole()) return "";
 
   return `
     <div class="card bg-light text-dark border-warning mt-5 mb-4 shadow">
@@ -1441,7 +1482,8 @@ function renderUserManagement() {
            <input type="password" id="new-admin-pw" class="form-control form-control-sm bg-light text-dark border-secondary mb-2" placeholder="Lösenord">
            
            <select id="new-admin-role" class="form-select form-select-sm bg-light text-dark border-secondary mb-3">
-             <option value="admin">Normal Admin</option>
+             <option value="admin">Admin</option>
+             <option value="developer">Utvecklare</option>
              <option value="superadmin">Superadmin</option>
            </select>
 
@@ -1586,7 +1628,7 @@ function loadAdminList() {
           <div class="d-flex justify-content-between align-items-center" id="row-main-${index}">
             <div>
               <div class="fw-bold">${displayName}</div>
-              <div class="small text-muted">${currentId} • ${u.role}</div>
+              <div class="small text-muted">${currentId} • ${formatAdminRoleLabel_(u.role)}</div>
             </div>
             <button onclick="showDeleteConfirm(${index})" class="btn btn-outline-danger btn-sm border-0">
               <i class="bi bi-trash"></i> Ta bort
@@ -1685,6 +1727,10 @@ function finalDelete(username, index) {
 
 
 function handleDeleteClick(routeId, blockId, btn) {
+  if (!canDeleteContentRole()) {
+    showToast("Radera leder får endast admin. Kontakta admin.");
+    return;
+  }
   // Om knappen redan är i "Bekräfta"-läge, kör raderingen
   if (btn.getAttribute('data-confirm') === 'true') {
     if (btn.__confirmResetTimer) {
@@ -1712,6 +1758,10 @@ function handleDeleteClick(routeId, blockId, btn) {
 }
 
 function executeDelete(routeId, blockId, btn) {
+  if (!canDeleteContentRole()) {
+    showToast("Radera leder får endast admin. Kontakta admin.");
+    return;
+  }
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
@@ -2029,7 +2079,8 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
         .filter(p => String(p.BlockID) === String(block.ID))
         .sort((a, b) => String(a.StartOrder).localeCompare(String(b.StartOrder), undefined, {numeric: true}));
     
-    const isSuper = currentUser && currentUser.role === 'superadmin';
+    const canDel = canDeleteContentRole();
+    const showDangerCol = canDel;
     html += `
       <div class="card bg-light text-dark border-secondary mb-4 shadow-sm">
         <div class="card-header bg-black bg-opacity-25 border-secondary py-2">
@@ -2038,17 +2089,17 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
             <input type="text" class="form-control form-control-sm bg-white text-dark border-secondary" id="block-name-${block.ID}" value="${escapeHtmlAttr(block.Namn)}">
           </div>
           <div class="d-flex flex-wrap gap-3 justify-content-between align-items-start w-100">
-            <div class="d-flex flex-column gap-1 block-toolbar-primary ${(block.DriveID || isSuper) ? 'flex-grow-1' : 'w-100'}" style="min-width: 140px; max-width: 100%;">
+            <div class="d-flex flex-column gap-1 block-toolbar-primary ${showDangerCol ? 'flex-grow-1' : 'w-100'}" style="min-width: 140px; max-width: 100%;">
               <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="saveBlockName('${block.ID}', this)">Spara namn</button>
               <button type="button" class="btn btn-primary btn-sm admin-action-btn" onclick="triggerUpload('${block.ID}', this)">${block.DriveID ? 'Byt topo' : 'Lägg till topo'}</button>
             </div>
-            ${(block.DriveID || isSuper) ? `
+            ${showDangerCol ? `
             <div class="d-flex flex-column gap-1 align-items-stretch block-toolbar-danger flex-grow-0">
               ${block.DriveID ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showTopoDeleteUI('${block.ID}')">Ta bort topo</button>` : ''}
-              ${isSuper ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="showBlockDeleteUI('${block.ID}')">Radera block</button>` : ''}
+              <button type="button" class="btn btn-outline-danger btn-sm" onclick="showBlockDeleteUI('${block.ID}')">Radera block</button>
             </div>` : ''}
           </div>
-          ${block.DriveID ? `
+          ${block.DriveID && canDel ? `
           <div id="topo-del-wrap-${block.ID}" class="d-none mt-2 p-2 rounded border border-danger bg-danger bg-opacity-10">
             <div class="small text-danger fw-bold text-uppercase mb-1" style="font-size:0.65rem;">Bekräfta — skriv ta bort</div>
             <input type="text" class="form-control form-control-sm mb-2 border-danger" id="topo-del-inp-${block.ID}" placeholder="ta bort" autocomplete="off" oninput="validateTopoDeleteInput('${block.ID}')">
@@ -2057,7 +2108,7 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
               <button type="button" class="btn btn-outline-secondary btn-sm" onclick="hideTopoDeleteUI('${block.ID}')">✕</button>
             </div>
           </div>` : ''}
-          ${isSuper ? `
+          ${canDel ? `
           <div id="block-del-wrap-${block.ID}" class="d-none mt-2 p-2 rounded border border-danger bg-danger bg-opacity-10">
             <div class="small text-danger fw-bold text-uppercase mb-1" style="font-size:0.65rem;">Bekräfta — skriv ta bort</div>
             <input type="text" class="form-control form-control-sm mb-2 border-danger" id="block-del-inp-${block.ID}" placeholder="ta bort" autocomplete="off" oninput="validateBlockDeleteInput('${block.ID}')">
@@ -2133,13 +2184,13 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
               </div>
 
               <div class="d-flex justify-content-between align-items-center border-top border-secondary pt-2">
-                <button 
+                ${canDel ? `<button 
   id="btn-del-${r.ID}" 
   type="button" 
   class="btn btn-outline-danger btn-sm border-0" 
   onclick="handleDeleteClick('${r.ID}', '${block.ID}', this)">
   🗑️ Ta bort
-</button>
+</button>` : `<span class="small text-muted align-self-center" style="font-size:0.65rem;">Radera: kontakta admin</span>`}
                 
                 <button type="button" class="btn btn-sm btn-primary px-3 admin-action-btn fw-bold" onclick="updateRouteData('${r.ID}', this)">
                   Spara ändring
@@ -2377,6 +2428,10 @@ function saveBlockName(blockId, btn) {
 }
 
 function showTopoDeleteUI(blockId) {
+  if (!canDeleteContentRole()) {
+    showToast("Ta bort topo får endast admin. Kontakta admin.");
+    return;
+  }
   hideBlockDeleteUI(blockId);
   const w = document.getElementById("topo-del-wrap-" + blockId);
   if (!w) return;
@@ -2410,6 +2465,10 @@ function validateTopoDeleteInput(blockId) {
 }
 
 function executeClearTopo(blockId) {
+  if (!canDeleteContentRole()) {
+    showToast("Ta bort topo får endast admin. Kontakta admin.");
+    return;
+  }
   const go = document.getElementById("topo-del-go-" + blockId);
   if (go) {
     go.disabled = true;
@@ -2447,6 +2506,10 @@ function executeClearTopo(blockId) {
 }
 
 function showBlockDeleteUI(blockId) {
+  if (!canDeleteContentRole()) {
+    showToast("Radera block får endast admin. Kontakta admin.");
+    return;
+  }
   hideTopoDeleteUI(blockId);
   const w = document.getElementById("block-del-wrap-" + blockId);
   if (!w) return;
@@ -2480,6 +2543,10 @@ function validateBlockDeleteInput(blockId) {
 }
 
 function executeDeleteBlock(blockId) {
+  if (!canDeleteContentRole()) {
+    showToast("Radera block får endast admin. Kontakta admin.");
+    return;
+  }
   const go = document.getElementById("block-del-go-" + blockId);
   if (go) {
     go.disabled = true;
@@ -2591,6 +2658,10 @@ function validateCragDeleteInput() {
 }
 
 function openCragDeleteOverlay(id) {
+  if (!canDeleteContentRole()) {
+    showToast("Radera crag får endast admin. Kontakta admin.");
+    return;
+  }
   __pendingDeleteCragId = id;
   const input = document.getElementById('crag-delete-input');
   const btn = document.getElementById('crag-delete-ok');
@@ -2612,6 +2683,10 @@ function closeCragDeleteOverlay() {
 }
 
 function executeDeleteCrag() {
+  if (!canDeleteContentRole()) {
+    showToast("Radera crag får endast admin. Kontakta admin.");
+    return;
+  }
   const id = __pendingDeleteCragId;
   if (!id) return;
   const btn = document.getElementById('crag-delete-ok');
