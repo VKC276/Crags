@@ -590,10 +590,12 @@
 
 let currentUser = { authorized: false, role: null, username: null };
 
-/** Normaliserad roll: superadmin | admin | developer (tomt i ark → admin) */
+/** Normaliserad roll: superadmin | admin | scout (tomt i ark → admin; legacy "developer" → scout) */
 function userRole_() {
   var r = String(currentUser && currentUser.role != null ? currentUser.role : "").toLowerCase().trim();
-  return r || "admin";
+  if (!r) return "admin";
+  if (r === "developer") return "scout";
+  return r;
 }
 
 function canManageUsersRole() {
@@ -609,14 +611,14 @@ function canDeleteContentRole() {
 /** Alla inloggade roller: skapa/redigera crag, block, leder */
 function canCreateAndEditCragContentRole() {
   var r = userRole_();
-  return r === "superadmin" || r === "admin" || r === "developer";
+  return r === "superadmin" || r === "admin" || r === "scout";
 }
 
 function adminRoleLabelSv() {
   var r = userRole_();
   if (r === "superadmin") return "Superadmin";
   if (r === "admin") return "Admin";
-  if (r === "developer") return "Utvecklare";
+  if (r === "scout") return "Scout";
   return "Admin";
 }
 
@@ -624,7 +626,7 @@ function formatAdminRoleLabel_(r) {
   var x = String(r || "").toLowerCase().trim();
   if (x === "superadmin") return "Superadmin";
   if (x === "admin") return "Admin";
-  if (x === "developer") return "Utvecklare";
+  if (x === "scout" || x === "developer") return "Scout";
   return String(r || "");
 }
 
@@ -1483,7 +1485,7 @@ function renderUserManagement() {
            
            <select id="new-admin-role" class="form-select form-select-sm bg-light text-dark border-secondary mb-3">
              <option value="admin">Admin</option>
-             <option value="developer">Utvecklare</option>
+             <option value="scout">Scout</option>
              <option value="superadmin">Superadmin</option>
            </select>
 
