@@ -142,6 +142,48 @@
       max-height: calc(100dvh - env(safe-area-inset-top, 0px));
     }
     #panel #panel-body { flex: 1; min-height: 0; overflow-y: auto; }
+    .panel-jump-bar {
+      flex-shrink: 0;
+      padding: 10px 14px 12px;
+      background: linear-gradient(180deg, #f0fff4 0%, #fff 100%);
+      border-bottom: 1px solid rgba(25, 135, 84, 0.2);
+    }
+    @keyframes jump-hit-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.35); transform: translateY(0); }
+      50% { box-shadow: 0 4px 20px rgba(13, 110, 253, 0.35); transform: translateY(-1px); }
+    }
+    @keyframes jump-hit-shine {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    .btn-jump-hit {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      letter-spacing: 0.03em;
+      color: #fff;
+      background: linear-gradient(90deg, #0d6efd, #198754, #0d6efd);
+      background-size: 200% 100%;
+      animation: jump-hit-glow 2s ease-in-out infinite, jump-hit-shine 3s linear infinite;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    .btn-jump-hit:active {
+      transform: scale(0.98);
+      filter: brightness(0.95);
+    }
+    .btn-jump-hit .jump-hit-arrow {
+      display: inline-block;
+      animation: jump-hit-bounce 0.9s ease-in-out infinite;
+    }
+    @keyframes jump-hit-bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(3px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .btn-jump-hit { animation: none; box-shadow: 0 2px 8px rgba(13, 110, 253, 0.25); background: #0d6efd; }
+      .btn-jump-hit .jump-hit-arrow { animation: none; }
+    }
     .panel-header { flex-shrink: 0; padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 20px 20px 0 0; }
     .type-label { font-size: 0.75rem; color: #666; font-weight: bold; text-transform: uppercase; margin-left: 5px; }
     .route-item { border-bottom: 1px solid #f1f1f1; padding: 10px 0; }
@@ -524,6 +566,7 @@
       <h5 id="panel-title" class="m-0"></h5>
       <button class="btn-close" onclick="closePanel()"></button>
     </div>
+    <div id="panel-jump-bar" class="panel-jump-bar d-none" aria-live="polite"></div>
     <div class="p-3" id="panel-body"></div>
   </div>
 
@@ -1005,6 +1048,29 @@ function routeMatchesSearchQuery(r, q) {
   return name.includes(qq) || grade.startsWith(qq) || type.includes(qq);
 }
 
+function setPanelJumpBarVisible(show) {
+  var bar = document.getElementById("panel-jump-bar");
+  if (!bar) return;
+  if (!show) {
+    bar.classList.add("d-none");
+    bar.innerHTML = "";
+    return;
+  }
+  bar.classList.remove("d-none");
+  bar.innerHTML =
+    '<button type="button" class="btn btn-jump-hit w-100 shadow-sm" onclick="jumpToFirstSearchHit()" aria-label="Jump to search hit">' +
+    '<span class="jump-hit-arrow me-1" aria-hidden="true">↓</span> Jump to hit' +
+    "</button>";
+}
+
+function jumpToFirstSearchHit() {
+  var el = document.getElementById("panel-first-search-match");
+  var body = document.getElementById("panel-body");
+  if (!el || !body) return;
+  el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
+  setPanelJumpBarVisible(false);
+}
+
 function openCrag(id, query) {
   const loc = db.locations.find(l => String(l.ID).trim() === String(id).trim());
   if (!loc) return;
@@ -1153,23 +1219,14 @@ function openCrag(id, query) {
   document.getElementById('panel').classList.add('open');
   document.getElementById('panel-body').scrollTop = 0;
 
-  if (q !== "" && firstMatchRouteId != null) {
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        var el = document.getElementById("panel-first-search-match");
-        var body = document.getElementById("panel-body");
-        if (el && body) {
-          el.scrollIntoView({ block: "start", behavior: "smooth", inline: "nearest" });
-        }
-      });
-    });
-  }
+  setPanelJumpBarVisible(q !== "" && firstMatchRouteId != null);
 }
 
 
     function closePanel() {
       document.getElementById('panel').classList.remove('open');
       document.body.classList.remove("crag-panel-open");
+      setPanelJumpBarVisible(false);
     }
 
     // 5. ADMIN LOGIK
