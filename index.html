@@ -776,12 +776,12 @@ function cragMakeExpandableTextHtml_(plainText, fadeVariant) {
     prev +
     "</div>" +
     '<div class="crag-readmore-fade" aria-hidden="true"></div>' +
-    '<button type="button" class="crag-readmore-btn btn btn-link p-0 small fw-semibold" onclick="toggleCragReadMore_(this)">Klicka för att läsa mer</button>' +
+    '<button type="button" class="crag-readmore-btn btn btn-link p-0 small fw-semibold" onclick="toggleCragReadMore_(this)">Click to read more</button>' +
     "</div>" +
     '<div class="crag-readmore-full d-none" style="white-space:pre-wrap;font-weight:inherit;">' +
     escFull +
     "</div>" +
-    '<button type="button" class="crag-readmore-less btn btn-link p-0 small d-none mt-1" onclick="toggleCragReadMore_(this)">Visa mindre</button>' +
+    '<button type="button" class="crag-readmore-less btn btn-link p-0 small d-none mt-1" onclick="toggleCragReadMore_(this)">Show less</button>' +
     "</div>"
   );
 }
@@ -1388,6 +1388,7 @@ function openCrag(id, query) {
   if (cragInfoRaw !== "") {
     cragInfoHtml =
       '<div class="p-2 mb-3 border-start border-4 border-secondary bg-white small text-dark">' +
+      '<div class="small fw-bold text-uppercase text-muted mb-2" style="font-size:0.65rem;letter-spacing:0.05em;">Crag info</div>' +
       cragMakeExpandableTextHtml_(cragInfoRaw, "white") +
       "</div>";
   }
