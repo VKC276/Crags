@@ -713,6 +713,23 @@ function escapeHtmlAttr(str) {
     .replace(/>/g, "&gt;");
 }
 
+function escapeHtml_(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Roll från server/ark för dropdown (samma logik som normalizeStaffRole_ på serversidan) */
+function normalizeListedUserRole_(r) {
+  var x = String(r || "").toLowerCase().trim();
+  if (!x || x === "null" || x === "undefined") return "admin";
+  if (x === "superadmin") return "superadmin";
+  if (x === "admin") return "admin";
+  if (x === "scout" || x === "developer") return "scout";
+  return "scout";
+}
+
 /** Användarnamn sparas i en cookie på enheten (webbläsaren) endast om "Kom ihåg mig" är ikryssad vid inloggning. Avmarkering rensar cookien. */
 var ADMIN_REMEMBER_COOKIE_NAME = "crags_admin_remember_username";
 var ADMIN_REMEMBER_COOKIE_DAYS = 400;
@@ -1886,23 +1903,40 @@ function loadAdminList() {
 
     let html = '<div class="list-group list-group-flush bg-transparent">';
     users.forEach((u, index) => {
-      const isSelf = u.username === currentUser.username;
+      const isSelf =
+        String(u.username || "").toLowerCase().trim() ===
+        String(currentUser && currentUser.username ? currentUser.username : "").toLowerCase().trim();
       if (isSelf) return; 
 
       // VIKTIGT: Här mappar vi rätt
       const currentId = u.username; // Detta är det unika ID:t (t.ex. nils88)
       const displayName = u.name;   // Detta är namnet (t.ex. Nils Nilsson)
+      const normRole = normalizeListedUserRole_(u.role);
+      const selScout = normRole === "scout" ? " selected" : "";
+      const selAdmin = normRole === "admin" ? " selected" : "";
+      const selSuper = normRole === "superadmin" ? " selected" : "";
 
       html += `
         <div class="list-group-item bg-transparent border-secondary text-dark px-0 py-3">
-          <div class="d-flex justify-content-between align-items-center" id="row-main-${index}">
-            <div>
-              <div class="fw-bold">${displayName}</div>
-              <div class="small text-muted">${currentId} • ${formatAdminRoleLabel_(u.role)}</div>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2" id="row-main-${index}">
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-bold">${escapeHtml_(displayName)}</div>
+              <div class="small text-muted">${escapeHtml_(currentId)}</div>
             </div>
-            <button onclick="showDeleteConfirm(${index})" class="btn btn-outline-danger btn-sm border-0">
-              <i class="bi bi-trash"></i> Ta bort
-            </button>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+              <select class="form-select form-select-sm bg-light text-dark border-secondary" style="width:9.5rem;"
+                aria-label="Roll"
+                data-username="${escapeHtmlAttr(currentId)}"
+                data-prev="${escapeHtmlAttr(normRole)}"
+                onchange="onAdminUserRoleChange(this)">
+                <option value="scout"${selScout}>Scout</option>
+                <option value="admin"${selAdmin}>Admin</option>
+                <option value="superadmin"${selSuper}>Superadmin</option>
+              </select>
+              <button type="button" onclick="showDeleteConfirm(${index})" class="btn btn-outline-danger btn-sm border-0">
+                Ta bort
+              </button>
+            </div>
           </div>
 
           <div id="row-confirm-${index}" style="display:none;" class="bg-danger bg-opacity-10 p-2 rounded border border-danger">
@@ -1927,6 +1961,35 @@ function loadAdminList() {
     html += '</div>';
     container.innerHTML = html;
   }).getAllAdmins();
+}
+
+function onAdminUserRoleChange(sel) {
+  if (!sel) return;
+  var username = sel.getAttribute("data-username");
+  var prev = sel.getAttribute("data-prev") || "admin";
+  var role = sel.value;
+  if (!username || role === prev) return;
+
+  sel.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      sel.disabled = false;
+      if (res && res.success) {
+        sel.setAttribute("data-prev", role);
+        if (typeof showToast === "function") showToast("Roll uppdaterad.");
+      } else {
+        sel.value = prev;
+        if (typeof showToast === "function") {
+          showToast(res && res.msg ? res.msg : "Kunde inte ändra roll.");
+        }
+      }
+    })
+    .withFailureHandler(function () {
+      sel.disabled = false;
+      sel.value = prev;
+      if (typeof showToast === "function") showToast("Nätverksfel vid rollbyte.");
+    })
+    .updateUserRole(username, role);
 }
 
 function showDeleteConfirm(index) {
