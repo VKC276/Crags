@@ -1291,6 +1291,15 @@ function openCrag(id, query) {
     accessHtml = `<div class="p-2 mb-3 border-start border-4 border-success bg-light small">${loc.AccessText}</div>`;
   }
 
+  let cragInfoHtml = "";
+  let cragInfoRaw = String(loc.CragInfo != null ? loc.CragInfo : "").trim();
+  if (cragInfoRaw !== "") {
+    cragInfoHtml =
+      '<div class="p-2 mb-3 border-start border-4 border-secondary bg-white small text-dark" style="white-space:pre-wrap;">' +
+      escapeHtml_(cragInfoRaw) +
+      "</div>";
+  }
+
   // --- NAVIGATIONSLÄNKAR ---
   let navHtml = `
     <div class="mb-4 p-3 rounded shadow-sm border" style="background: #f8f9fa;">
@@ -1309,7 +1318,7 @@ function openCrag(id, query) {
       </div>
     </div>`;
 
-  let html = accessHtml + navHtml;
+  let html = accessHtml + cragInfoHtml + navHtml;
 
   // --- RENDER BLOCK & LEDER ---
   cragBlocks.forEach(block => {
@@ -2385,7 +2394,10 @@ async function renderEditLocation(id) {
           <option value="Y" ${loc.Status==='Y'?'selected':''}>Gul (Varning)</option>
           <option value="R" ${loc.Status==='R'?'selected':''}>Röd (Stängt)</option>
         </select>
-        <textarea id="adm-text" class="form-control bg-light text-dark text-dark border-secondary mb-3" rows="2" placeholder="Accessinformation...">${loc.AccessText || ''}</textarea>
+        <label class="small text-muted mb-1">Access / tillträde (kopplat till status ovan)</label>
+        <textarea id="adm-text" class="form-control bg-light text-dark text-dark border-secondary mb-2" rows="2" placeholder="Accessinformation...">${escapeHtmlAttr(loc.AccessText || "")}</textarea>
+        <label class="small text-muted mb-1">CragInfo (valfritt, ren information under access i appen)</label>
+        <textarea id="adm-craginfo" class="form-control bg-light text-dark border-secondary mb-3" rows="3" placeholder="Övrig information om craget...">${escapeHtmlAttr(loc.CragInfo || "")}</textarea>
         <button type="button" class="btn btn-primary btn-sm w-100 fw-bold admin-action-btn" onclick="saveStatus('${loc.ID}')">Spara CRAG-info</button>
       </div>
     </div>
@@ -2708,15 +2720,17 @@ function refreshAdminRoutesListForCurrentCrag() {
       const btn = event.currentTarget;
       const s = document.getElementById('adm-status').value;
       const t = document.getElementById('adm-text').value;
+      const ciEl = document.getElementById('adm-craginfo');
+      const ci = ciEl ? ciEl.value : "";
       btn.disabled = true; btn.innerHTML = "Sparar...";
       google.script.run.withSuccessHandler(res => {
         if(res.success) {
           btn.innerHTML = "Sparat!"; btn.className = "btn btn-success btn-sm w-100 fw-bold admin-action-btn";
           const loc = db.locations.find(l => String(l.ID) === String(id));
-          if(loc) { loc.Status = s; loc.AccessText = t; }
+          if(loc) { loc.Status = s; loc.AccessText = t; loc.CragInfo = ci; }
           setTimeout(() => { btn.disabled = false; btn.innerHTML = "Spara CRAG-info"; btn.className = "btn btn-primary btn-sm w-100 fw-bold admin-action-btn"; }, 2000);
         }
-      }).updateCragStatus(id, s, t);
+      }).updateCragStatus(id, s, t, ci);
     }
 
     function saveRoute() {
@@ -3009,7 +3023,8 @@ async function saveLocationEdit(id) {
     Status: loc.Status,
     ParkingLat: platStr,
     ParkingLng: plngStr,
-    AccessText: loc.AccessText || ''
+    AccessText: loc.AccessText || '',
+    CragInfo: loc.CragInfo || ''
   };
 
   // 2. Uppdatera lokalt minne (db.locations)
@@ -3275,6 +3290,11 @@ async function renderCreateLocation() {
           </div>
         </div>
 
+        <label class="small text-muted mb-1">Access / tillträde (valfritt)</label>
+        <textarea id="new-loc-accesstext" class="form-control form-control-sm bg-white text-dark border-secondary mb-2" rows="2" placeholder="Accessinformation..."></textarea>
+        <label class="small text-muted mb-1">CragInfo (valfritt, visas under access i appen)</label>
+        <textarea id="new-loc-craginfo" class="form-control form-control-sm bg-white text-dark border-secondary mb-3" rows="2" placeholder="Övrig information..."></textarea>
+
         <button type="button" id="btn-save-new" class="btn btn-primary w-100 fw-bold py-2 shadow admin-action-btn" onclick="saveNewLocAction()">Skapa crag</button>
       </div>
     </div>
@@ -3355,7 +3375,9 @@ function saveNewLocAction() {
     Lat_Sektor: latS,
     Lng_Sektor: lngS,
     ParkingLat: (document.getElementById('new-loc-plat').value || "").trim().replace(',', '.'),
-    ParkingLng: (document.getElementById('new-loc-plng').value || "").trim().replace(',', '.')
+    ParkingLng: (document.getElementById('new-loc-plng').value || "").trim().replace(',', '.'),
+    AccessText: (document.getElementById("new-loc-accesstext") && document.getElementById("new-loc-accesstext").value) || "",
+    CragInfo: (document.getElementById("new-loc-craginfo") && document.getElementById("new-loc-craginfo").value) || ""
   };
 
   // Anropa backend (Code.gs)
