@@ -187,6 +187,39 @@
     .panel-header { flex-shrink: 0; padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 20px 20px 0 0; }
     .type-label { font-size: 0.75rem; color: #666; font-weight: bold; text-transform: uppercase; margin-left: 5px; }
     .route-item { border-bottom: 1px solid #f1f1f1; padding: 10px 0; }
+
+    /* Långa access-/CragInfo-texter: förhandsvisning + fade + “read more” */
+    .crag-readmore { position: relative; }
+    .crag-readmore-collapsed { position: relative; padding-bottom: 2px; }
+    .crag-readmore-fade {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 1.35rem;
+      height: 2rem;
+      pointer-events: none;
+    }
+    .crag-readmore--danger .crag-readmore-fade {
+      background: linear-gradient(to bottom, rgba(248, 215, 218, 0), rgb(248, 215, 218));
+    }
+    .crag-readmore--warning .crag-readmore-fade {
+      background: linear-gradient(to bottom, rgba(255, 243, 205, 0), rgb(255, 243, 205));
+    }
+    .crag-readmore--access .crag-readmore-fade {
+      background: linear-gradient(to bottom, rgba(248, 249, 250, 0), rgb(248, 249, 250));
+    }
+    .crag-readmore--white .crag-readmore-fade {
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgb(255, 255, 255));
+    }
+    .crag-readmore-btn, .crag-readmore-less {
+      font-size: 0.8rem !important;
+      text-decoration: none !important;
+      color: #0d6efd !important;
+    }
+    .crag-readmore-less { color: #6c757d !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .crag-readmore-fade { display: none; }
+    }
     
     /* ADMIN & LOGIN (Behållen) */
     #app-admin { display: none; background: #f1f3f5; color: #212529 !important; height: 100%; overflow-y: auto; padding-bottom: 100px; }
@@ -718,6 +751,58 @@ function escapeHtml_(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+var CRAG_USER_TEXT_PREVIEW_CHARS = 150;
+
+/**
+ * För användarpanel: max CRAG_USER_TEXT_PREVIEW_CHARS tecken, fade + “Click to read more”.
+ * fadeVariant: danger | warning | access | white (matchar bakgrund under alert/rutor).
+ */
+function cragMakeExpandableTextHtml_(plainText, fadeVariant) {
+  var full = String(plainText || "");
+  var escFull = escapeHtml_(full);
+  if (full.length <= CRAG_USER_TEXT_PREVIEW_CHARS) {
+    return '<span class="crag-readmore-plain" style="white-space:pre-wrap;font-weight:inherit;">' + escFull + "</span>";
+  }
+  var prev = escapeHtml_(full.substring(0, CRAG_USER_TEXT_PREVIEW_CHARS)) + "…";
+  var fv = fadeVariant || "white";
+  return (
+    '<div class="crag-readmore crag-readmore--' +
+    fv +
+    '">' +
+    '<div class="crag-readmore-collapsed">' +
+    '<div class="crag-readmore-preview" style="white-space:pre-wrap;font-weight:inherit;">' +
+    prev +
+    "</div>" +
+    '<div class="crag-readmore-fade" aria-hidden="true"></div>' +
+    '<button type="button" class="crag-readmore-btn btn btn-link p-0 small fw-semibold" onclick="toggleCragReadMore_(this)">Klicka för att läsa mer</button>' +
+    "</div>" +
+    '<div class="crag-readmore-full d-none" style="white-space:pre-wrap;font-weight:inherit;">' +
+    escFull +
+    "</div>" +
+    '<button type="button" class="crag-readmore-less btn btn-link p-0 small d-none mt-1" onclick="toggleCragReadMore_(this)">Visa mindre</button>' +
+    "</div>"
+  );
+}
+
+function toggleCragReadMore_(el) {
+  var root = el.closest(".crag-readmore");
+  if (!root) return;
+  var collapsed = root.querySelector(".crag-readmore-collapsed");
+  var full = root.querySelector(".crag-readmore-full");
+  var less = root.querySelector(".crag-readmore-less");
+  if (!collapsed || !full || !less) return;
+  var isOpen = !full.classList.contains("d-none");
+  if (isOpen) {
+    full.classList.add("d-none");
+    less.classList.add("d-none");
+    collapsed.classList.remove("d-none");
+  } else {
+    collapsed.classList.add("d-none");
+    full.classList.remove("d-none");
+    less.classList.remove("d-none");
+  }
 }
 
 /** Roll från server/ark för dropdown (samma logik som normalizeStaffRole_ på serversidan) */
@@ -1286,17 +1371,24 @@ function openCrag(id, query) {
   const status = String(loc.Status).toUpperCase();
   if (status !== 'G') {
     let alertClass = (status === 'R') ? "alert-danger" : "alert-warning";
-    accessHtml = `<div class="alert ${alertClass} shadow-sm mb-3 fw-bold small">⚠️ Accessinfo: ${loc.AccessText || ''}</div>`;
+    let fadeKey = status === 'R' ? "danger" : "warning";
+    accessHtml =
+      `<div class="alert ${alertClass} shadow-sm mb-3 fw-bold small">⚠️ Accessinfo: ` +
+      cragMakeExpandableTextHtml_(loc.AccessText || "", fadeKey) +
+      `</div>`;
   } else if (loc.AccessText) {
-    accessHtml = `<div class="p-2 mb-3 border-start border-4 border-success bg-light small">${loc.AccessText}</div>`;
+    accessHtml =
+      `<div class="p-2 mb-3 border-start border-4 border-success bg-light small">` +
+      cragMakeExpandableTextHtml_(loc.AccessText, "access") +
+      `</div>`;
   }
 
   let cragInfoHtml = "";
   let cragInfoRaw = String(loc.CragInfo != null ? loc.CragInfo : "").trim();
   if (cragInfoRaw !== "") {
     cragInfoHtml =
-      '<div class="p-2 mb-3 border-start border-4 border-secondary bg-white small text-dark" style="white-space:pre-wrap;">' +
-      escapeHtml_(cragInfoRaw) +
+      '<div class="p-2 mb-3 border-start border-4 border-secondary bg-white small text-dark">' +
+      cragMakeExpandableTextHtml_(cragInfoRaw, "white") +
       "</div>";
   }
 
