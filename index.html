@@ -1086,24 +1086,29 @@ function routeMatchesSearchToken(r, token) {
   var name = (r.Namn || "").toLowerCase();
   var grade = (r.Grad || "").toLowerCase();
   var type = (r.Typ || "").toLowerCase();
-  return name.indexOf(t) !== -1 || grade.indexOf(t) === 0 || type.indexOf(t) !== -1;
+  return (
+    name.indexOf(t) !== -1 ||
+    grade.indexOf(t) !== -1 ||
+    type.indexOf(t) !== -1
+  );
 }
 
-/** Crag syns om varje sökord träffar i cragnamn eller i någon led under craget. */
+/**
+ * Crag syns om alla sökord ryms i cragnamnet, eller om minst en led tillsammans med cragnamnet
+ * täcker alla ord (samma regel som markering i panelen — inte spritt på olika leder).
+ */
 function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens) {
   if (!tokens.length) return true;
   var locName = (loc.Namn || "").toLowerCase();
+  if (tokens.every(function (t) { return locName.indexOf(t) !== -1; })) return true;
   var blockIds = blocksByCrag[loc.ID] || [];
-  return tokens.every(function (token) {
-    if (locName.indexOf(token) !== -1) return true;
-    for (var bi = 0; bi < blockIds.length; bi++) {
-      var probs = problemsByBlock[blockIds[bi]] || [];
-      for (var pi = 0; pi < probs.length; pi++) {
-        if (routeMatchesSearchToken(probs[pi], token)) return true;
-      }
+  for (var bi = 0; bi < blockIds.length; bi++) {
+    var probs = problemsByBlock[blockIds[bi]] || [];
+    for (var pi = 0; pi < probs.length; pi++) {
+      if (routeMatchesSearchQuery(probs[pi], tokens.join(" "), loc.Namn)) return true;
     }
-    return false;
-  });
+  }
+  return false;
 }
 
 function filterData() {
@@ -1157,21 +1162,15 @@ function filterData() {
 
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
- * Markering av led i panel + antal träffar i listan.
- * Flera ord: crag-filtret kan matcha olika ord på olika leder ("trad 8"). Då ska varje led som
- * träffar minst ett av orden markeras. Om alla ord redan ryms i cragnamnet markeras alla leder.
- * Dessutom: om en och samma led + cragnamn tillsammans täcker alla ord (t.ex. "lilla" i namn + "6c" på leden).
+ * Markering / räkning: alla sökord måste täckas av samma led + ev. cragnamn.
+ * Per ord: delsträng i Typ, partiell match i Grad, eller delsträng i lednamn; annars samma ord i cragnamn.
  */
 function routeMatchesSearchQuery(r, q, optLocName) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
   var locName = String(optLocName || "").toLowerCase();
-  var strictAll = tokens.every(function (token) {
+  return tokens.every(function (token) {
     if (locName.indexOf(token) !== -1) return true;
-    return routeMatchesSearchToken(r, token);
-  });
-  if (strictAll) return true;
-  return tokens.some(function (token) {
     return routeMatchesSearchToken(r, token);
   });
 }
