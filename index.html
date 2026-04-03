@@ -1157,15 +1157,21 @@ function filterData() {
 
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
- * Led matchar om alla sökord matchar (namn/grad-prefix/typ för leden, eller cragnamn).
- * optLocName: så t.ex. "lilla 6c" kan matcha crag + grad på samma led.
+ * Markering av led i panel + antal träffar i listan.
+ * Flera ord: crag-filtret kan matcha olika ord på olika leder ("trad 8"). Då ska varje led som
+ * träffar minst ett av orden markeras. Om alla ord redan ryms i cragnamnet markeras alla leder.
+ * Dessutom: om en och samma led + cragnamn tillsammans täcker alla ord (t.ex. "lilla" i namn + "6c" på leden).
  */
 function routeMatchesSearchQuery(r, q, optLocName) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
   var locName = String(optLocName || "").toLowerCase();
-  return tokens.every(function (token) {
+  var strictAll = tokens.every(function (token) {
     if (locName.indexOf(token) !== -1) return true;
+    return routeMatchesSearchToken(r, token);
+  });
+  if (strictAll) return true;
+  return tokens.some(function (token) {
     return routeMatchesSearchToken(r, token);
   });
 }
