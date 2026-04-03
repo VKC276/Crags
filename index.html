@@ -521,6 +521,14 @@
                        style="border-radius: 10px; font-size: 0.95rem; padding: 12px 15px;">
             </div>
 
+            <div class="d-flex align-items-center gap-2 mb-3 w-100 text-start">
+              <input type="checkbox" id="admin-remember-me" tabindex="3"
+                     class="flex-shrink-0 border-secondary rounded"
+                     style="width:1.125rem; height:1.125rem; margin:0; cursor:pointer; background-color:#212529;"
+                     onchange="if (!this.checked) setRememberedAdminUsername('');">
+              <label class="text-white-50 small mb-0 text-start" for="admin-remember-me" style="cursor:pointer; line-height:1.2;">Kom ihåg mig</label>
+            </div>
+
             <button onclick="checkLogin()" id="login-btn" 
                     class="btn btn-primary btn-lg w-100 shadow fw-bold py-2 mb-3" 
                     style="border-radius: 10px; letter-spacing: 0.5px;">
@@ -705,7 +713,7 @@ function escapeHtmlAttr(str) {
     .replace(/>/g, "&gt;");
 }
 
-/** Sparat användarnamn som cookie (Kom ihåg mig). Äldre värde i localStorage flyttas hit en gång. */
+/** Användarnamn sparas i en cookie på enheten (webbläsaren) endast om "Kom ihåg mig" är ikryssad vid inloggning. Avmarkering rensar cookien. */
 var ADMIN_REMEMBER_COOKIE_NAME = "crags_admin_remember_username";
 var ADMIN_REMEMBER_COOKIE_DAYS = 400;
 var ADMIN_REMEMBER_LS_LEGACY = "crags_admin_remember_username";
