@@ -1080,42 +1080,10 @@ function splitSearchQuery_(q) {
     });
 }
 
-/**
- * Sökord som anger ledtyp (trad/sport/bould …) får inte matchas mot cragnamn — annars räcker
- * t.ex. "trad" i platsnamnet och "8" i sportledens grad (fel positiv).
- */
-function isRouteDisciplineSearchToken_(t) {
-  var x = String(t || "").toLowerCase().trim();
-  if (x.length < 3) return false;
-  var set = {
-    trad: true,
-    traditional: true,
-    sport: true,
-    boulder: true,
-    bould: true,
-    block: true,
-    mix: true,
-    mixed: true,
-    ice: true,
-    topprep: true,
-    toppreps: true
-  };
-  return !!set[x];
-}
-
-function routeTypMatchesToken_(r, token) {
-  var t = String(token || "").toLowerCase().trim();
-  if (!t) return false;
-  var type = (r.Typ || "").toLowerCase();
-  return type.indexOf(t) !== -1;
-}
-
+/** Ett ord matchar en led om det finns i lednamn, Typ eller som delsträng i Grad. */
 function routeMatchesSearchToken(r, token) {
   var t = String(token || "").toLowerCase().trim();
   if (!t) return false;
-  if (isRouteDisciplineSearchToken_(t)) {
-    return routeTypMatchesToken_(r, t);
-  }
   var name = (r.Namn || "").toLowerCase();
   var grade = (r.Grad || "").toLowerCase();
   var type = (r.Typ || "").toLowerCase();
@@ -1126,23 +1094,55 @@ function routeMatchesSearchToken(r, token) {
   );
 }
 
+/** Cragnamn-match: hela söksträngen som delsträng, eller alla sökord finns i namnet. */
+function cragNameMatchesSearch_(locNameRaw, tokens, fullQ) {
+  var locName = String(locNameRaw || "").toLowerCase();
+  if (fullQ.length > 0 && locName.indexOf(fullQ) !== -1) return true;
+  if (tokens.length > 0 && tokens.every(function (t) { return locName.indexOf(t) !== -1; })) return true;
+  return false;
+}
+
 /**
- * Crag syns om alla sökord ryms i cragnamnet, eller om minst en led tillsammans med cragnamnet
- * täcker alla ord (samma regel som markering i panelen — inte spritt på olika leder).
+ * Led-match när cragnamn inte räcker: varje ord ska träffa Typ eller Grad (inte lednamn).
+ * Flera ord: minst ett ord i Typ och minst ett i Grad (samma led). Ett ord: Typ eller Grad.
  */
-function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens) {
+function routeMatchesTypAndGradAgainstTokens(r, tokens) {
+  if (!tokens.length) return false;
+  var typ = (r.Typ || "").toLowerCase();
+  var grade = (r.Grad || "").toLowerCase();
+  if (tokens.length === 1) {
+    var t0 = tokens[0];
+    return typ.indexOf(t0) !== -1 || grade.indexOf(t0) !== -1;
+  }
+  var typHit = false;
+  var gradeHit = false;
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i];
+    var inTyp = typ.indexOf(t) !== -1;
+    var inGr = grade.indexOf(t) !== -1;
+    if (!inTyp && !inGr) return false;
+    if (inTyp) typHit = true;
+    if (inGr) gradeHit = true;
+  }
+  return typHit && gradeHit;
+}
+
+/**
+ * 1) Om cragnamnet matchar sökningen → visa craget.
+ * 2) Annars → visa om minst en led matchar Typ+Grad mot sökorden (samma led).
+ */
+function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, q) {
+  var tokens = splitSearchQuery_(q);
   if (!tokens.length) return true;
-  var locName = (loc.Namn || "").toLowerCase();
-  var allFromLoc = tokens.every(function (t) {
-    if (isRouteDisciplineSearchToken_(t)) return false;
-    return locName.indexOf(t) !== -1;
-  });
-  if (allFromLoc) return true;
+  var fullQ = String(q || "").toLowerCase().trim();
+
+  if (cragNameMatchesSearch_(loc.Namn, tokens, fullQ)) return true;
+
   var blockIds = blocksByCrag[loc.ID] || [];
   for (var bi = 0; bi < blockIds.length; bi++) {
     var probs = problemsByBlock[blockIds[bi]] || [];
     for (var pi = 0; pi < probs.length; pi++) {
-      if (routeMatchesSearchQuery(probs[pi], tokens.join(" "), loc.Namn)) return true;
+      if (routeMatchesTypAndGradAgainstTokens(probs[pi], tokens)) return true;
     }
   }
   return false;
@@ -1174,7 +1174,7 @@ function filterData() {
 
   if (tokens.length > 0) {
     filteredLocations = db.locations.filter(loc =>
-      cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens)
+      cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, q)
     );
   }
 
@@ -1199,21 +1199,19 @@ function filterData() {
 
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
- * Markering / räkning: alla sökord måste täckas av samma led + ev. cragnamn.
- * Disciplinord (trad/sport/…) matchar bara Typ på leden, aldrig cragnamn.
- * Övriga ord: cragnamn eller lednamn / partiell grad / typ.
+ * Panel / antal träffar: samma två lägen som crag-filter — namn-träff → markera leder som träffar något ord;
+ * annars markera endast leder som uppfyller Typ+Grad-regeln.
  */
 function routeMatchesSearchQuery(r, q, optLocName) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
-  var locName = String(optLocName || "").toLowerCase();
-  return tokens.every(function (token) {
-    if (isRouteDisciplineSearchToken_(token)) {
-      return routeTypMatchesToken_(r, token);
-    }
-    if (locName.indexOf(token) !== -1) return true;
-    return routeMatchesSearchToken(r, token);
-  });
+  var fullQ = String(q || "").toLowerCase().trim();
+  if (cragNameMatchesSearch_(optLocName, tokens, fullQ)) {
+    return tokens.some(function (token) {
+      return routeMatchesSearchToken(r, token);
+    });
+  }
+  return routeMatchesTypAndGradAgainstTokens(r, tokens);
 }
 
 function setPanelJumpBarVisible(show) {
