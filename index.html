@@ -1080,9 +1080,42 @@ function splitSearchQuery_(q) {
     });
 }
 
+/**
+ * Sökord som anger ledtyp (trad/sport/bould …) får inte matchas mot cragnamn — annars räcker
+ * t.ex. "trad" i platsnamnet och "8" i sportledens grad (fel positiv).
+ */
+function isRouteDisciplineSearchToken_(t) {
+  var x = String(t || "").toLowerCase().trim();
+  if (x.length < 3) return false;
+  var set = {
+    trad: true,
+    traditional: true,
+    sport: true,
+    boulder: true,
+    bould: true,
+    block: true,
+    mix: true,
+    mixed: true,
+    ice: true,
+    topprep: true,
+    toppreps: true
+  };
+  return !!set[x];
+}
+
+function routeTypMatchesToken_(r, token) {
+  var t = String(token || "").toLowerCase().trim();
+  if (!t) return false;
+  var type = (r.Typ || "").toLowerCase();
+  return type.indexOf(t) !== -1;
+}
+
 function routeMatchesSearchToken(r, token) {
   var t = String(token || "").toLowerCase().trim();
   if (!t) return false;
+  if (isRouteDisciplineSearchToken_(t)) {
+    return routeTypMatchesToken_(r, t);
+  }
   var name = (r.Namn || "").toLowerCase();
   var grade = (r.Grad || "").toLowerCase();
   var type = (r.Typ || "").toLowerCase();
@@ -1100,7 +1133,11 @@ function routeMatchesSearchToken(r, token) {
 function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens) {
   if (!tokens.length) return true;
   var locName = (loc.Namn || "").toLowerCase();
-  if (tokens.every(function (t) { return locName.indexOf(t) !== -1; })) return true;
+  var allFromLoc = tokens.every(function (t) {
+    if (isRouteDisciplineSearchToken_(t)) return false;
+    return locName.indexOf(t) !== -1;
+  });
+  if (allFromLoc) return true;
   var blockIds = blocksByCrag[loc.ID] || [];
   for (var bi = 0; bi < blockIds.length; bi++) {
     var probs = problemsByBlock[blockIds[bi]] || [];
@@ -1163,13 +1200,17 @@ function filterData() {
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
  * Markering / räkning: alla sökord måste täckas av samma led + ev. cragnamn.
- * Per ord: delsträng i Typ, partiell match i Grad, eller delsträng i lednamn; annars samma ord i cragnamn.
+ * Disciplinord (trad/sport/…) matchar bara Typ på leden, aldrig cragnamn.
+ * Övriga ord: cragnamn eller lednamn / partiell grad / typ.
  */
 function routeMatchesSearchQuery(r, q, optLocName) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
   var locName = String(optLocName || "").toLowerCase();
   return tokens.every(function (token) {
+    if (isRouteDisciplineSearchToken_(token)) {
+      return routeTypMatchesToken_(r, token);
+    }
     if (locName.indexOf(token) !== -1) return true;
     return routeMatchesSearchToken(r, token);
   });
