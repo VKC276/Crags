@@ -900,7 +900,7 @@ function initMap() {
             const sectorBlocks = db.blocks.filter(b => String(b.CragID) === String(loc.ID));
             const matchCount = db.problems.filter(p => {
               const isMyBlock = sectorBlocks.some(b => String(b.ID) === String(p.BlockID));
-              return isMyBlock && routeMatchesSearchQuery(p, q, loc.Namn);
+              return isMyBlock && routeMatchesSearchQuery(p, q, loc.Namn, loc.ID);
             }).length;
             if (matchCount > 0) detailText = `🎯 ${matchCount} matchin routes`;
           }
@@ -1148,6 +1148,24 @@ function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, q) {
   return false;
 }
 
+/** Sant om craget har minst en led som matchar Typ+Grad mot sökningen (för highlight i panel). */
+function cragHasTypGradRouteMatch_(locId, q) {
+  var tokens = splitSearchQuery_(q);
+  if (!tokens.length || !db || !db.blocks || !db.problems) return false;
+  var idStr = String(locId).trim();
+  for (var bi = 0; bi < db.blocks.length; bi++) {
+    var b = db.blocks[bi];
+    if (String(b.CragID).trim() !== idStr) continue;
+    var bid = String(b.ID).trim();
+    for (var pi = 0; pi < db.problems.length; pi++) {
+      var p = db.problems[pi];
+      if (String(p.BlockID).trim() !== bid) continue;
+      if (routeMatchesTypAndGradAgainstTokens(p, tokens)) return true;
+    }
+  }
+  return false;
+}
+
 function filterData() {
   closePanel();
 
@@ -1199,18 +1217,13 @@ function filterData() {
 
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
- * Panel / antal träffar: samma två lägen som crag-filter — namn-träff → markera leder som träffar något ord;
- * annars markera endast leder som uppfyller Typ+Grad-regeln.
+ * Highlight / antal träffar: endast när craget också har Typ+Grad-matchande leder.
+ * Ren cragnamn-match → inga gröna rader (optLocName används inte längre men lämnas för anropens skull).
  */
-function routeMatchesSearchQuery(r, q, optLocName) {
+function routeMatchesSearchQuery(r, q, optLocName, locId) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
-  var fullQ = String(q || "").toLowerCase().trim();
-  if (cragNameMatchesSearch_(optLocName, tokens, fullQ)) {
-    return tokens.some(function (token) {
-      return routeMatchesSearchToken(r, token);
-    });
-  }
+  if (!cragHasTypGradRouteMatch_(locId, q)) return false;
   return routeMatchesTypAndGradAgainstTokens(r, tokens);
 }
 
@@ -1260,7 +1273,7 @@ function openCrag(id, query) {
         .filter(p => String(p.BlockID).trim() === String(block.ID).trim())
         .sort((a, b) => String(a.StartOrder || "99").localeCompare(String(b.StartOrder || "99"), undefined, { numeric: true }));
       for (let ri = 0; ri < routes.length; ri++) {
-        if (routeMatchesSearchQuery(routes[ri], q, loc.Namn)) {
+        if (routeMatchesSearchQuery(routes[ri], q, loc.Namn, loc.ID)) {
           firstMatchRouteId = routes[ri].ID;
           break outer;
         }
@@ -1329,7 +1342,7 @@ function openCrag(id, query) {
 
         <div class="ps-1">
          ${routes.length > 0 ? routes.map(r => {
- const isMatch = routeMatchesSearchQuery(r, q, loc.Namn);
+ const isMatch = routeMatchesSearchQuery(r, q, loc.Namn, loc.ID);
  const firstAttr = firstMatchRouteId != null && String(r.ID) === String(firstMatchRouteId) ? ' id="panel-first-search-match"' : "";
   
   // Vi kollar både Typ och typ för att vara helt säkra
