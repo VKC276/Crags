@@ -3107,12 +3107,51 @@ let smoothedHeading = 0;
 const filterFactor = 0.1; // Ju lägre, desto lugnare pil (0.05 - 0.2)
 let watchId = null;
 let userMarker = null;
+/** Advanced marker för parkering (P) under approach-navigering */
+let approachParkingMarker = null;
 
 // Globala variabler för position
 window.targetLat = null;
 window.targetLng = null;
 window.lastUserLat = null;
 window.lastUserLng = null;
+/** Parkering { lat, lng } för fitBounds medan nav körs (sätts om koordinater finns) */
+window._navParkingPos = null;
+
+function removeApproachParkingMarker() {
+  if (approachParkingMarker) {
+    approachParkingMarker.map = null;
+    approachParkingMarker = null;
+  }
+}
+
+async function addApproachParkingMarkerIfAny(loc) {
+  removeApproachParkingMarker();
+  window._navParkingPos = null;
+  if (!map || !loc) return;
+  const plat = parseFloat(loc.ParkingLat);
+  const plng = parseFloat(loc.ParkingLng);
+  if (isNaN(plat) || isNaN(plng)) return;
+  window._navParkingPos = { lat: plat, lng: plng };
+  try {
+    const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker");
+    const parkPin = new PinElement({
+      glyphText: "P",
+      background: "#0d6efd",
+      borderColor: "#fff",
+      glyphColor: "#fff"
+    });
+    approachParkingMarker = new AdvancedMarkerElement({
+      map: map,
+      position: { lat: plat, lng: plng },
+      title: "Parkering · " + (loc.Namn || ""),
+      content: parkPin.element,
+      zIndex: 950
+    });
+  } catch (e) {
+    console.warn("Kunde inte skapa P-markör för parkering:", e);
+  }
+}
 
 function startInternalNav(locId) {
   const loc = db.locations.find(l => String(l.ID) === String(locId));
@@ -3120,6 +3159,8 @@ function startInternalNav(locId) {
 
   window.targetLat = Number(loc.Lat_Sektor);
   window.targetLng = Number(loc.Lng_Sektor);
+
+  addApproachParkingMarkerIfAny(loc);
 
   closePanel();
   switchView('map');
@@ -3191,7 +3232,10 @@ function startInternalNav(locId) {
 
       const bounds = new google.maps.LatLngBounds();
       bounds.extend(userPos);
-      bounds.extend({lat: window.targetLat, lng: window.targetLng});
+      bounds.extend({ lat: window.targetLat, lng: window.targetLng });
+      if (window._navParkingPos) {
+        bounds.extend(window._navParkingPos);
+      }
       map.fitBounds(bounds, 80);
 
     }, null, { enableHighAccuracy: true });
@@ -3260,6 +3304,8 @@ function stopNav() {
     userMarker.setMap(null);
     userMarker = null;
   }
+  window._navParkingPos = null;
+  removeApproachParkingMarker();
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
   markers.forEach(function (m) {
