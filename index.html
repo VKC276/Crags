@@ -445,7 +445,7 @@
   <div class="floating-search-wrapper">
     <div class="search-box shadow">
       <span class="search-icon">🔍</span>
-      <input type="text" id="mainSearch" placeholder="Search type, crag, grade or route..." onkeyup="filterData()">
+      <input type="text" id="mainSearch" placeholder="Search crag, grade or route..." onkeyup="filterData()">
       <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
       <div class="admin-trigger" onclick="toggleAdmin(true)">
         ⚙️
@@ -895,12 +895,15 @@ function initMap() {
       container.innerHTML = locations.map(loc => {
         let detailText = loc.AccessText ? loc.AccessText.substring(0, 45) + "..." : "Show details";
         if (q !== "") {
-          const sectorBlocks = db.blocks.filter(b => String(b.CragID) === String(loc.ID));
-          const matchCount = db.problems.filter(p => {
-            const isMyBlock = sectorBlocks.some(b => String(b.ID) === String(p.BlockID));
-            return isMyBlock && routeMatchesSearchQuery(p, q);
-          }).length;
-          if (matchCount > 0) detailText = `🎯 ${matchCount} matchin routes`;
+          const searchTokens = splitSearchQuery_(q);
+          if (searchTokens.length > 0) {
+            const sectorBlocks = db.blocks.filter(b => String(b.CragID) === String(loc.ID));
+            const matchCount = db.problems.filter(p => {
+              const isMyBlock = sectorBlocks.some(b => String(b.ID) === String(p.BlockID));
+              return isMyBlock && routeMatchesSearchQuery(p, q, loc.Namn);
+            }).length;
+            if (matchCount > 0) detailText = `🎯 ${matchCount} matchin routes`;
+          }
         }
 
         return `
@@ -1066,11 +1069,48 @@ function toggleNewLocPickerSatellite() {
   syncAdminPickerSatelliteButton("new-map-sat-toggle", ctx.usingSatellite);
 }
 
+/** Delar söksträng i ord; flera ord = alla måste matcha (AND). */
+function splitSearchQuery_(q) {
+  return String(q || "")
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(function (t) {
+      return t.length > 0;
+    });
+}
+
+function routeMatchesSearchToken(r, token) {
+  var t = String(token || "").toLowerCase().trim();
+  if (!t) return false;
+  var name = (r.Namn || "").toLowerCase();
+  var grade = (r.Grad || "").toLowerCase();
+  var type = (r.Typ || "").toLowerCase();
+  return name.indexOf(t) !== -1 || grade.indexOf(t) === 0 || type.indexOf(t) !== -1;
+}
+
+/** Crag syns om varje sökord träffar i cragnamn eller i någon led under craget. */
+function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens) {
+  if (!tokens.length) return true;
+  var locName = (loc.Namn || "").toLowerCase();
+  var blockIds = blocksByCrag[loc.ID] || [];
+  return tokens.every(function (token) {
+    if (locName.indexOf(token) !== -1) return true;
+    for (var bi = 0; bi < blockIds.length; bi++) {
+      var probs = problemsByBlock[blockIds[bi]] || [];
+      for (var pi = 0; pi < probs.length; pi++) {
+        if (routeMatchesSearchToken(probs[pi], token)) return true;
+      }
+    }
+    return false;
+  });
+}
+
 function filterData() {
   closePanel();
 
-  // 🔹 Söksträng (alltid lowercase)
   const q = String(document.getElementById('mainSearch').value || "").toLowerCase().trim();
+  const tokens = splitSearchQuery_(q);
 
   // 🔹 Bygg lookup-tabeller
   const blocksByCrag = {};
@@ -1088,32 +1128,12 @@ function filterData() {
     problemsByBlock[blockId].push(p);
   });
 
-  // 🔹 Filtrera locations
   let filteredLocations = db.locations;
 
-  if (q !== "") {
-    filteredLocations = db.locations.filter(loc => {
-      const locName = (loc.Namn || "").toLowerCase();
-      if (locName.includes(q)) return true;
-
-      const blockIds = blocksByCrag[loc.ID] || [];
-
-      for (let blockId of blockIds) {
-        const problems = problemsByBlock[blockId] || [];
-
-        for (let p of problems) {
-          const name = (p.Namn || "").toLowerCase();
-          const grade = (p.Grad || "").toLowerCase();
-          const type = (p.Typ || "").toLowerCase(); // 🔹 ny Typ-matchning
-
-          if (name.includes(q) || grade.startsWith(q) || type.includes(q)) {
-            return true;
-          }
-        }
-      }
-
-      return false;
-    });
+  if (tokens.length > 0) {
+    filteredLocations = db.locations.filter(loc =>
+      cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, tokens)
+    );
   }
 
   renderList(filteredLocations);
@@ -1136,14 +1156,18 @@ function filterData() {
 
 
     // 4. ÖPPNA SEKTOR (DETALJER)
-/** Samma logik som filterData för led-matchning (namn, grad prefix, typ) */
-function routeMatchesSearchQuery(r, q) {
-  const qq = String(q || "").toLowerCase().trim();
-  if (!qq) return false;
-  const name = (r.Namn || "").toLowerCase();
-  const grade = (r.Grad || "").toLowerCase();
-  const type = (r.Typ || "").toLowerCase();
-  return name.includes(qq) || grade.startsWith(qq) || type.includes(qq);
+/**
+ * Led matchar om alla sökord matchar (namn/grad-prefix/typ för leden, eller cragnamn).
+ * optLocName: så t.ex. "lilla 6c" kan matcha crag + grad på samma led.
+ */
+function routeMatchesSearchQuery(r, q, optLocName) {
+  var tokens = splitSearchQuery_(q);
+  if (!tokens.length) return false;
+  var locName = String(optLocName || "").toLowerCase();
+  return tokens.every(function (token) {
+    if (locName.indexOf(token) !== -1) return true;
+    return routeMatchesSearchToken(r, token);
+  });
 }
 
 function setPanelJumpBarVisible(show) {
@@ -1192,7 +1216,7 @@ function openCrag(id, query) {
         .filter(p => String(p.BlockID).trim() === String(block.ID).trim())
         .sort((a, b) => String(a.StartOrder || "99").localeCompare(String(b.StartOrder || "99"), undefined, { numeric: true }));
       for (let ri = 0; ri < routes.length; ri++) {
-        if (routeMatchesSearchQuery(routes[ri], q)) {
+        if (routeMatchesSearchQuery(routes[ri], q, loc.Namn)) {
           firstMatchRouteId = routes[ri].ID;
           break outer;
         }
@@ -1261,7 +1285,7 @@ function openCrag(id, query) {
 
         <div class="ps-1">
          ${routes.length > 0 ? routes.map(r => {
- const isMatch = routeMatchesSearchQuery(r, q);
+ const isMatch = routeMatchesSearchQuery(r, q, loc.Namn);
  const firstAttr = firstMatchRouteId != null && String(r.ID) === String(firstMatchRouteId) ? ' id="panel-first-search-match"' : "";
   
   // Vi kollar både Typ och typ för att vara helt säkra
