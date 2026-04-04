@@ -1199,6 +1199,24 @@ function splitSearchQuery_(q) {
     });
 }
 
+/** Tomt Order → sist; siffror från bladet Blocks kolumn "Order". */
+function parseBlockSheetOrder_(v) {
+  if (v == null) return Number.POSITIVE_INFINITY;
+  var s = String(v).trim();
+  if (s === "") return Number.POSITIVE_INFINITY;
+  var n = parseFloat(s.replace(",", "."));
+  return isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+function sortBlocksBySheetOrder_(blocks) {
+  return blocks.slice().sort(function (a, b) {
+    var da = parseBlockSheetOrder_(a.Order);
+    var db = parseBlockSheetOrder_(b.Order);
+    if (da !== db) return da - db;
+    return String(a.Namn || "").localeCompare(String(b.Namn || ""), "sv", { numeric: true });
+  });
+}
+
 /** Ett ord matchar en led om det finns i lednamn, Typ eller som delsträng i Grad. */
 function routeMatchesSearchToken(r, token) {
   var t = String(token || "").toLowerCase().trim();
@@ -1291,13 +1309,17 @@ function filterData() {
   const q = String(document.getElementById('mainSearch').value || "").toLowerCase().trim();
   const tokens = splitSearchQuery_(q);
 
-  // 🔹 Bygg lookup-tabeller
+  // 🔹 Bygg lookup-tabeller (block i samma ordning som i bladet, kolumn Order)
   const blocksByCrag = {};
   db.blocks.forEach(b => {
     const cragId = b.CragID;
-    const blockId = b.ID;
     if (!blocksByCrag[cragId]) blocksByCrag[cragId] = [];
-    blocksByCrag[cragId].push(blockId);
+    blocksByCrag[cragId].push(b);
+  });
+  Object.keys(blocksByCrag).forEach(function (cid) {
+    blocksByCrag[cid] = sortBlocksBySheetOrder_(blocksByCrag[cid]).map(function (b) {
+      return b.ID;
+    });
   });
 
   const problemsByBlock = {};
@@ -1382,7 +1404,9 @@ function openCrag(id, query) {
   }
 
   document.getElementById('panel-title').innerText = loc.Namn;
-  const cragBlocks = db.blocks.filter(b => String(b.CragID).trim() === String(id).trim());
+  const cragBlocks = sortBlocksBySheetOrder_(
+    db.blocks.filter(b => String(b.CragID).trim() === String(id).trim())
+  );
 
   let firstMatchRouteId = null;
   if (q !== "") {
@@ -2550,8 +2574,7 @@ async function renderEditLocation(id) {
       <label class="text-muted small mb-1">Välj Block</label>
       <select id="adm-block-id" class="form-select bg-light text-dark border-secondary" oninput="validateForm()">
         <option value="">-- Välj ett block --</option>
-        ${db.blocks
-          .filter(b => String(b.CragID) === String(id))
+        ${sortBlocksBySheetOrder_(db.blocks.filter(b => String(b.CragID) === String(id)))
           .map(b => `<option value="${b.ID}">${b.Namn}</option>`)
           .join('')}
       </select>
@@ -2619,7 +2642,7 @@ function validateForm() {
 function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
   const container = document.getElementById('admin-routes-list');
   
-  const sectorBlocks = db.blocks.filter(b => blockIds.includes(b.ID));
+  const sectorBlocks = sortBlocksBySheetOrder_(db.blocks.filter(b => blockIds.includes(b.ID)));
   
   if (sectorBlocks.length === 0) {
     container.innerHTML = '<p class="text-muted small px-2">Inga block skapade än.</p>';
@@ -2640,6 +2663,11 @@ function renderAdminRoutesBySector(blockIds, allBlocksHtml) {
           <div class="mb-2">
             <label class="text-muted small d-block mb-1" style="font-size:0.65rem;">BLOCKNAMN</label>
             <input type="text" class="form-control form-control-sm bg-white text-dark border-secondary" id="block-name-${block.ID}" value="${escapeHtmlAttr(block.Namn)}">
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="text-muted" style="font-size:0.65rem;">BLOCK ORDNING</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Flytta upp" aria-label="Flytta block upp" onclick="moveBlockOrderInAdmin('${block.ID}', -1)">↑</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Flytta ner" aria-label="Flytta block ner" onclick="moveBlockOrderInAdmin('${block.ID}', 1)">↓</button>
           </div>
           <div class="d-flex flex-wrap gap-3 justify-content-between align-items-start w-100">
             <div class="d-flex flex-column gap-1 block-toolbar-primary ${showDangerCol ? 'flex-grow-1' : 'w-100'}" style="min-width: 140px; max-width: 100%;">
@@ -2952,6 +2980,40 @@ function refreshAdminRoutesListForCurrentCrag() {
       }, 800);
     }
   }).saveNewBlock({ CragID: cragId, Namn: name, Typ: "" });
+}
+
+function moveBlockOrderInAdmin(blockId, delta) {
+  const cragId = __adminEditingCragId;
+  if (!cragId) return;
+  const list = sortBlocksBySheetOrder_(db.blocks.filter(b => String(b.CragID) === String(cragId)));
+  const idx = list.findIndex(b => String(b.ID) === String(blockId));
+  if (idx < 0) return;
+  const j = idx + delta;
+  if (j < 0 || j >= list.length) return;
+  const next = list.slice();
+  const t = next[idx];
+  next[idx] = next[j];
+  next[j] = t;
+  const orderedIds = next.map(b => b.ID);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && res.success) {
+        orderedIds.forEach(function (bid, i) {
+          const b = db.blocks.find(x => String(x.ID) === String(bid));
+          if (b) b.Order = String(i + 1);
+        });
+        const allBlocksDropdown = getAllBlocksDropdownHtml();
+        const sectorBlockIds = db.blocks.filter(b => String(b.CragID) === String(cragId)).map(b => b.ID);
+        renderAdminRoutesBySector(sectorBlockIds, allBlocksDropdown);
+        showToast("Blockordning sparad.");
+      } else {
+        showToast("Kunde inte spara ordning: " + (res && res.msg ? res.msg : ""));
+      }
+    })
+    .withFailureHandler(function () {
+      showToast("Nätverksfel vid sparande av ordning.");
+    })
+    .updateBlockOrders(cragId, orderedIds);
 }
 
 function saveBlockName(blockId, btn) {
@@ -4002,20 +4064,14 @@ function showToast(message, duration = 3000) {
 }
 
 function openCommentCardFromEl(el) {
-  // Hämta ledens namn direkt från raden (inte startnummer)
+  const name = el.querySelector(".ps-2 span:last-child")?.innerText || "Okänd led";
+  const raw = el.getAttribute("data-comment");
+  const text = raw != null ? String(raw).trim() : "";
 
-const name = el.querySelector('.ps-2 span:last-child')?.innerText || "Okänd led";
-  const text = el.getAttribute("data-comment");
-
-  if (!text || text.trim() === "") return;
-
-  // Sätt rubrik till ledens namn
   document.getElementById("commentRouteName").innerText = name;
-  document.getElementById("commentText").innerText = text;
+  document.getElementById("commentText").innerText = text === "" ? "No comments" : text;
 
-  // Visa modal
-  const overlay = document.getElementById("commentOverlay");
-  overlay.style.display = "flex";
+  document.getElementById("commentOverlay").style.display = "flex";
 }
 
 function closeCommentCard() {
