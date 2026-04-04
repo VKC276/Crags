@@ -3,7 +3,7 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes, viewport-fit=cover">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     /* GRUNDSTIL (Behållen) */
@@ -15,7 +15,8 @@
     /* NYTT: SVÄVANDE SÖKFÄLT (Ersätter gamla .header) */
     .floating-search-wrapper {
         position: absolute;
-        top: 15px;
+        /* Undvik statusfält / notch på mobil (Android, iOS); desktop får oftast inset 0 */
+        top: calc(15px + env(safe-area-inset-top, 0px));
         left: 0;
         right: 0;
         padding: 0 15px;
@@ -142,6 +143,14 @@
       max-height: calc(100dvh - env(safe-area-inset-top, 0px));
     }
     #panel #panel-body { flex: 1; min-height: 0; overflow-y: auto; }
+
+    /* Listvy: samma extra luft upptill som under panelen (sök + safe area) */
+    #view-list {
+      padding-top: calc(90px + env(safe-area-inset-top, 0px));
+      padding-left: 15px;
+      padding-right: 15px;
+      padding-bottom: 100px;
+    }
     .panel-jump-bar {
       flex-shrink: 0;
       padding: 10px 14px 12px;
@@ -490,7 +499,7 @@
     <div id="map-canvas" style="height: 100%;"></div>
   </div>
   
-  <div id="view-list" style="display: none; height: 100%; overflow-y: auto; padding: 90px 15px 100px 15px; background: #f8f9fa;">
+  <div id="view-list" style="display: none; height: 100%; overflow-y: auto; background: #f8f9fa;">
     <div id="list-container">Loading...</div>
   </div>
 
