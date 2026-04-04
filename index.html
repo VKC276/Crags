@@ -19,13 +19,18 @@
     }
     @media (max-width: 896px) {
       :root {
-        --search-offset-top: max(calc(12px + var(--safe-top)), 36px);
+        /* Lägre golv än 36px — söket närmare toppen utan att krocka med Android-statusrad */
+        --search-offset-top: max(calc(8px + var(--safe-top)), 22px);
         --search-stack-height: calc(var(--search-offset-top) + var(--search-box-h) + var(--search-below-gap));
       }
     }
 
+    /* Explicit höjdkedja: annars blir height:100% på #app-public ogiltig → karta/lista 0px höga */
+    html {
+      height: 100%;
+    }
     /* GRUNDSTIL (Behållen) */
-    body { font-family: -apple-system, sans-serif; background: #f8f9fa; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
+    body { font-family: -apple-system, sans-serif; background: #f8f9fa; height: 100%; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
     .scroll-area { flex-grow: 1; overflow-y: auto; position: relative; height: 100%; }
     #view-map { position: relative; }
     #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; touch-action: none; }
@@ -150,8 +155,9 @@
       box-shadow: 0 -5px 20px rgba(0,0,0,0.15);
       display: flex;
       flex-direction: column;
+      pointer-events: none;
     }
-    #panel.open { transform: translateY(0); }
+    #panel.open { transform: translateY(0); pointer-events: auto; }
     /* När crag-kortet är öppet: göm sök och låt panelen gå ända upp (sök är dolt) */
     body.crag-panel-open #app-public .floating-search-wrapper {
       display: none;
@@ -501,7 +507,7 @@
 </style>
 
 
-<div id="app-public" style="display: block; width: 100%; height: 100%; position: relative; overflow: hidden;">
+<div id="app-public" style="display: block; width: 100%; flex: 1 1 auto; min-height: 0; height: 100%; position: relative; overflow: hidden;">
   
   <div class="floating-search-wrapper">
     <div class="search-box shadow">
