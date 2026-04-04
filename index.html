@@ -6,26 +6,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=yes, viewport-fit=cover">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
+    /*
+     * Sökfält + panel/lista: gemensam höjd så inget krockar på mobil.
+     * Android Chrome rapporterar ofta safe-area-inset-top = 0 trots statusfält → min-top på smala skärmar.
+     */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --search-box-h: 50px;
+      --search-below-gap: 14px;
+      --search-offset-top: calc(12px + var(--safe-top));
+      --search-stack-height: calc(var(--search-offset-top) + var(--search-box-h) + var(--search-below-gap));
+    }
+    @media (max-width: 896px) {
+      :root {
+        --search-offset-top: max(calc(12px + var(--safe-top)), 36px);
+        --search-stack-height: calc(var(--search-offset-top) + var(--search-box-h) + var(--search-below-gap));
+      }
+    }
+
     /* GRUNDSTIL (Behållen) */
-    body { font-family: -apple-system, sans-serif; background: #f8f9fa; height: 100vh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
+    body { font-family: -apple-system, sans-serif; background: #f8f9fa; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
     .scroll-area { flex-grow: 1; overflow-y: auto; position: relative; height: 100%; }
     #view-map { position: relative; }
     #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; touch-action: none; }
     
-    /* NYTT: SVÄVANDE SÖKFÄLT (Ersätter gamla .header) */
+    /* NYTT: SVÄVANDE SÖKFÄLT — fixed = följer viewport (Android Chrome m.m.), inte bara #app-public */
     .floating-search-wrapper {
-        position: absolute;
-        /* Undvik statusfält / notch på mobil (Android, iOS); desktop får oftast inset 0 */
-        top: calc(15px + env(safe-area-inset-top, 0px));
+        position: fixed;
+        top: var(--search-offset-top);
         left: 0;
         right: 0;
-        padding: 0 15px;
-        z-index: 2100; /* Över kartan och under/ jämte inget som täcker söket */
+        padding-left: max(15px, env(safe-area-inset-left, 0px));
+        padding-right: max(15px, env(safe-area-inset-right, 0px));
+        z-index: 2100;
         pointer-events: none;
     }
     .search-box {
         background: white;
-        height: 50px;
+        height: var(--search-box-h);
+        min-height: var(--search-box-h);
         border-radius: 15px;
         display: flex;
         align-items: center;
@@ -54,7 +73,7 @@
 /* Bottom nav: MAP (byt karttyp när aktiv) | LIST */
 .modern-nav {
   position: fixed;
-  bottom: 25px;
+  bottom: calc(25px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: 92%;
@@ -115,14 +134,14 @@
     .status-badge { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
     .bg-g { background: #28a745; } .bg-y { background: #ffc107; } .bg-r { background: #dc3545; }
 
-    /* DETAIL PANEL — börjar under flytande sök (samma ~90px som list-vy), överlappar inte sökfältet */
+    /* DETAIL PANEL — börjar under flytande sök (samma som --search-stack-height) */
     #panel {
       position: fixed;
       left: 0;
       right: 0;
-      top: calc(90px + env(safe-area-inset-top, 0px));
-      height: calc(100vh - 90px - env(safe-area-inset-top, 0px));
-      max-height: calc(100dvh - 90px - env(safe-area-inset-top, 0px));
+      top: var(--search-stack-height);
+      height: calc(100vh - var(--search-stack-height));
+      max-height: calc(100dvh - var(--search-stack-height));
       background: #fff;
       transform: translateY(100%);
       transition: transform 0.4s cubic-bezier(0, 0.5, 0.5, 1);
@@ -144,9 +163,9 @@
     }
     #panel #panel-body { flex: 1; min-height: 0; overflow-y: auto; }
 
-    /* Listvy: samma extra luft upptill som under panelen (sök + safe area) */
+    /* Listvy: samma luft upptill som under panelen */
     #view-list {
-      padding-top: calc(90px + env(safe-area-inset-top, 0px));
+      padding-top: var(--search-stack-height);
       padding-left: 15px;
       padding-right: 15px;
       padding-bottom: 100px;
@@ -3613,7 +3632,7 @@ function startInternalNav(locId) {
       if(!infoDiv) {
         infoDiv = document.createElement('div');
         infoDiv.id = 'nav-overlay';
-        infoDiv.style = "position:fixed; top:85px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); color:#333; padding:10px 20px; border-radius:50px; z-index:2000; font-weight:bold; display:flex; align-items:center; gap:15px; box-shadow:0 8px 25px rgba(0,0,0,0.15); border:1px solid rgba(0,0,0,0.1); width: 90%; max-width: 350px; justify-content: space-between;";
+        infoDiv.style.cssText = "position:fixed;top:calc(var(--search-stack-height) + 10px);left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#333;padding:10px 20px;border-radius:50px;z-index:2000;font-weight:bold;display:flex;align-items:center;gap:15px;box-shadow:0 8px 25px rgba(0,0,0,0.15);border:1px solid rgba(0,0,0,0.1);width:90%;max-width:350px;justify-content:space-between;";
         document.body.appendChild(infoDiv);
       }
 
