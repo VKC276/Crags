@@ -527,7 +527,7 @@
   <div class="floating-search-wrapper">
     <div class="search-box shadow">
       <span class="search-icon">🔍</span>
-      <input type="text" id="mainSearch" placeholder="Search type, crag, grade or route..." onkeyup="filterData()">
+      <input type="text" id="mainSearch" placeholder="Search crag, route name, grade or type…" onkeyup="filterData()">
       <button class="clear-btn" onclick="document.getElementById('mainSearch').value=''; filterData();" style="margin-right: 10px;">✕</button>
       <div class="admin-trigger" onclick="toggleAdmin(true)">
         ⚙️
@@ -1247,6 +1247,14 @@ function routeMatchesSearchToken(r, token) {
   );
 }
 
+/** Flera sökord (AND): varje ord ska finnas i samma led — namn, typ eller grad. */
+function routeMatchesAllTokensAnyField(r, tokens) {
+  if (!tokens || !tokens.length) return false;
+  return tokens.every(function (t) {
+    return routeMatchesSearchToken(r, t);
+  });
+}
+
 /** Cragnamn-match: hela söksträngen som delsträng, eller alla sökord finns i namnet. */
 function cragNameMatchesSearch_(locNameRaw, tokens, fullQ) {
   var locName = String(locNameRaw || "").toLowerCase();
@@ -1282,7 +1290,8 @@ function routeMatchesTypAndGradAgainstTokens(r, tokens) {
 
 /**
  * 1) Om cragnamnet matchar sökningen → visa craget.
- * 2) Annars → visa om minst en led matchar Typ+Grad mot sökorden (samma led).
+ * 2) Annars → visa om minst en led matchar Typ+Grad (särskild flerordslogik) eller
+ *    om lednamn/typ/grad matchar alla sökord (t.ex. sök på problemnamn).
  */
 function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, q) {
   var tokens = splitSearchQuery_(q);
@@ -1295,25 +1304,9 @@ function cragMatchesAllSearchTokens(loc, blocksByCrag, problemsByBlock, q) {
   for (var bi = 0; bi < blockIds.length; bi++) {
     var probs = problemsByBlock[blockIds[bi]] || [];
     for (var pi = 0; pi < probs.length; pi++) {
-      if (routeMatchesTypAndGradAgainstTokens(probs[pi], tokens)) return true;
-    }
-  }
-  return false;
-}
-
-/** Sant om craget har minst en led som matchar Typ+Grad mot sökningen (för highlight i panel). */
-function cragHasTypGradRouteMatch_(locId, q) {
-  var tokens = splitSearchQuery_(q);
-  if (!tokens.length || !db || !db.blocks || !db.problems) return false;
-  var idStr = String(locId).trim();
-  for (var bi = 0; bi < db.blocks.length; bi++) {
-    var b = db.blocks[bi];
-    if (String(b.CragID).trim() !== idStr) continue;
-    var bid = String(b.ID).trim();
-    for (var pi = 0; pi < db.problems.length; pi++) {
-      var p = db.problems[pi];
-      if (String(p.BlockID).trim() !== bid) continue;
-      if (routeMatchesTypAndGradAgainstTokens(p, tokens)) return true;
+      var pr = probs[pi];
+      if (routeMatchesTypAndGradAgainstTokens(pr, tokens)) return true;
+      if (routeMatchesAllTokensAnyField(pr, tokens)) return true;
     }
   }
   return false;
@@ -1374,14 +1367,16 @@ function filterData() {
 
     // 4. ÖPPNA SEKTOR (DETALJER)
 /**
- * Highlight / antal träffar: endast när craget också har Typ+Grad-matchande leder.
- * Ren cragnamn-match → inga gröna rader (optLocName används inte längre men lämnas för anropens skull).
+ * Grön markering / listräkning: led matchar Typ+Grad-sökning (äldre flerordslogik)
+ * eller alla sökord finns i samma led (namn, typ eller grad) — t.ex. problemnamn.
  */
 function routeMatchesSearchQuery(r, q, optLocName, locId) {
   var tokens = splitSearchQuery_(q);
   if (!tokens.length) return false;
-  if (!cragHasTypGradRouteMatch_(locId, q)) return false;
-  return routeMatchesTypAndGradAgainstTokens(r, tokens);
+  return (
+    routeMatchesTypAndGradAgainstTokens(r, tokens) ||
+    routeMatchesAllTokensAnyField(r, tokens)
+  );
 }
 
 function setPanelJumpBarVisible(show) {
