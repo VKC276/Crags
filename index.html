@@ -991,7 +991,11 @@ let __blockReorderInFlight = false;
           if (!Array.isArray(db.blocks)) db.blocks = [];
           if (!Array.isArray(db.problems)) db.problems = [];
           renderList(db.locations);
-          setTimeout(initMap, 500);
+          setTimeout(function () {
+            initMap().catch(function (err) {
+              console.error("initMap:", err);
+            });
+          }, 500);
         })
         .withFailureHandler(err => {
           console.error("Kunde inte hämta appdata:", err);
@@ -1006,7 +1010,8 @@ let __blockReorderInFlight = false;
     };
 
     // 2. KARTA
-function initMap() {
+/** div + Map() defaultar till RASTER; rotation/tilt kräver VECTOR (se Google: vector-map / map-rendering-type). */
+async function initMap() {
   if (!db || !Array.isArray(db.locations)) {
     console.error("initMap avbröts: db.locations saknas", db);
     hideLoadingScreen();
@@ -1018,28 +1023,45 @@ function initMap() {
 // Känn av om det är en mobil enhet (bredd under 768px eller touch-enhet)
   const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
 
-  map = new google.maps.Map(document.getElementById("map-canvas"), {
-    zoom: 9, 
-    center: vastervik, 
+  var MapCtor = google.maps.Map;
+  var vectorOpts = {};
+  try {
+    var libs = await google.maps.importLibrary("maps");
+    if (libs.Map) MapCtor = libs.Map;
+    if (libs.RenderingType) {
+      vectorOpts = { renderingType: libs.RenderingType.VECTOR };
+    }
+  } catch (e) {
+    console.warn("importLibrary(maps) misslyckades — provar utan explicit VECTOR:", e);
+  }
+  if (!vectorOpts.renderingType && google.maps.RenderingType) {
+    try {
+      vectorOpts = { renderingType: google.maps.RenderingType.VECTOR };
+    } catch (e2) {}
+  }
+
+  map = new MapCtor(document.getElementById("map-canvas"), Object.assign({
+    zoom: 9,
+    center: vastervik,
     mapId: "4504f8b373a348fd",
     mapTypeId: "roadmap",
-    disableDefaultUI: isMobile, 
-    gestureHandling: 'greedy',
+    disableDefaultUI: isMobile,
+    gestureHandling: "greedy",
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: false,
     panControl: false,
     zoomControl: false
-  });
-  map.setOptions({ gestureHandling: 'greedy' });
+  }, vectorOpts));
+
+  map.setOptions({ gestureHandling: "greedy" });
   window.__mapTypeBeforeSatellite = "roadmap";
   window.__usingSatelliteLayer = false;
   syncSatelliteToggleUi();
 
   markers = [];
-  // Använd den nya funktionen i loopen
   db.locations.forEach(loc => createMarker(loc));
-  
+
   hideLoadingScreen();
 }
 
@@ -3690,6 +3712,8 @@ let __navPrevLng = null;
 /** Mjukad kart-heading (grader) — följer färdriktning (COG), inte linjen mot crag. */
 let __navSmoothedMapHeading = null;
 const NAV_MAP_HEADING_SMOOTH = 0.22;
+/** När COG finns: mild “flygvy” (45°) — rotation syns tydligare; Google rekommenderar vektor + tilt/heading. */
+const NAV_APPROACH_TILT_WITH_COG_DEG = 45;
 
 // Globala variabler för position
 window.targetLat = null;
@@ -3711,16 +3735,19 @@ function getNavOverlayStatus_(distM, hasCogEstablished) {
 }
 
 /**
- * Rotation mot COG (WebGL/vector med mapId). fitBounds nollställer heading — kalla efter fitBounds och på idle.
+ * Rotation + tilt (vektorläge). fitBounds nollställer heading/tilt — anropa efter fitBounds/panTo.
+ * @param {number} tiltDeg 0 = plant; ~45 = oblik vy (samma idé som Googles tilt/rotation-exempel).
  */
-function applyApproachMapHeadingToMap_(headingDeg) {
+function applyApproachMapHeadingToMap_(headingDeg, tiltDeg) {
   if (!map) return;
   var h = headingDeg == null || isNaN(headingDeg) ? 0 : ((Number(headingDeg) % 360) + 360) % 360;
+  var t = tiltDeg == null || isNaN(tiltDeg) ? 0 : Number(tiltDeg);
   try {
     if (typeof map.moveCamera === "function") {
-      map.moveCamera({ heading: h, tilt: 0 });
-    } else if (typeof map.setHeading === "function") {
-      map.setHeading(h);
+      map.moveCamera({ heading: h, tilt: t });
+    } else {
+      if (typeof map.setHeading === "function") map.setHeading(h);
+      if (typeof map.setTilt === "function") map.setTilt(t);
     }
   } catch (e) {}
 }
@@ -3773,7 +3800,7 @@ function startInternalNav(locId) {
   __navPrevLng = null;
   __navSmoothedMapHeading = null;
   __navDidInitialBoundsFit = false;
-  applyApproachMapHeadingToMap_(0);
+  applyApproachMapHeadingToMap_(0, 0);
   removeNavApproachPolyline();
 
   addApproachParkingMarkerIfAny(loc);
@@ -3857,13 +3884,14 @@ function startInternalNav(locId) {
       }
 
       var headTarget = __navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0;
+      var tiltTarget = __navSmoothedMapHeading != null ? NAV_APPROACH_TILT_WITH_COG_DEG : 0;
 
       if (!__navDidInitialBoundsFit) {
         map.fitBounds(bounds, 80);
         __navDidInitialBoundsFit = true;
         (function applyHeadingAfterBounds_() {
           function applyOnce() {
-            applyApproachMapHeadingToMap_(headTarget);
+            applyApproachMapHeadingToMap_(headTarget, tiltTarget);
           }
           applyOnce();
           if (window.google && google.maps && google.maps.event) {
@@ -3876,7 +3904,7 @@ function startInternalNav(locId) {
         if (typeof map.panTo === "function") {
           map.panTo(userPos);
         }
-        applyApproachMapHeadingToMap_(headTarget);
+        applyApproachMapHeadingToMap_(headTarget, tiltTarget);
       }
 
       __navPrevLat = userPos.lat;
@@ -4082,7 +4110,7 @@ function stopNav() {
     });
   }
   if (map) {
-    applyApproachMapHeadingToMap_(0);
+    applyApproachMapHeadingToMap_(0, 0);
     map.setZoom(11);
   }
 }
