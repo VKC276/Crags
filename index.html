@@ -3658,11 +3658,9 @@ let navApproachPolyline = null;
 /** Tunn linje till halva sträckan med pil — bäring från GPS (user → crag) */
 let navHeadingArrowPolyline = null;
 
-let __navStartedAt = 0;
-/** Föregående position under nav — för ackumulerad rörelse så heading på kartan blir pålitlig. */
+/** Föregående position under nav — för COG (rörelsevektor). */
 let __navPrevLat = null;
 let __navPrevLng = null;
-let __navOdometerM = 0;
 /** Mjukad kart-heading (grader) — följer färdriktning (COG), inte linjen mot crag. */
 let __navSmoothedMapHeading = null;
 const NAV_MAP_HEADING_SMOOTH = 0.22;
@@ -3675,21 +3673,13 @@ window.lastUserLng = null;
 /** Parkering { lat, lng } för fitBounds medan nav körs (sätts om koordinater finns) */
 window._navParkingPos = null;
 
-/** Tillräcklig rörelse för "Heading in map"; annars "Start walking" och kartan behåller senast kända heading. */
-function isNavHeadingReliable_(distM, speedMs, odometerM) {
-  if (distM == null || isNaN(distM) || distM < 3) return false;
-  const SPEED_OK = 0.4;
-  const ODOM_OK = 12;
-  return (
-    (speedMs != null && !isNaN(speedMs) && speedMs >= SPEED_OK) ||
-    (odometerM != null && !isNaN(odometerM) && odometerM >= ODOM_OK)
-  );
-}
-
-/** Kort status: "Heading in map" först när vi har tillräcklig rörelse för stabil GPS-bäring. */
-function getNavOverlayStatus_(distM, speedMs, odometerM) {
+/**
+ * "Heading in map" = färdriktning/COG fastställd (vi har __navSmoothedMapHeading).
+ * "Start walking" = väntar på första giltiga COG (t.ex. rörelse mellan GPS-punkter).
+ */
+function getNavOverlayStatus_(distM, hasCogEstablished) {
   if (distM == null || isNaN(distM) || distM < 3) return "Calculating heading";
-  if (!isNavHeadingReliable_(distM, speedMs, odometerM)) return "Start walking";
+  if (!hasCogEstablished) return "Start walking";
   return "Heading in map";
 }
 
@@ -3735,10 +3725,8 @@ function startInternalNav(locId) {
   window.targetLat = Number(loc.Lat_Sektor);
   window.targetLng = Number(loc.Lng_Sektor);
 
-  __navStartedAt = Date.now();
   __navPrevLat = null;
   __navPrevLng = null;
-  __navOdometerM = 0;
   __navSmoothedMapHeading = null;
   removeNavApproachPolyline();
 
@@ -3775,15 +3763,19 @@ function startInternalNav(locId) {
       const distM = haversineMeters(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
       const dist = haversineDistance(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
       const speedMs = pos.coords.speed;
-      if (__navPrevLat != null && __navPrevLng != null) {
-        const stepM = haversineMeters(__navPrevLat, __navPrevLng, userPos.lat, userPos.lng);
-        if (stepM > 0.25 && stepM < 120) __navOdometerM += stepM;
-      }
-      __navPrevLat = userPos.lat;
-      __navPrevLng = userPos.lng;
-      const statusMsg = getNavOverlayStatus_(distM, speedMs, __navOdometerM);
 
-      updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng });
+      const cogDeg = resolveCourseOverGroundDeg_(pos, userPos, prevLatForCog, prevLngForCog, speedMs);
+      if (cogDeg != null) {
+        if (__navSmoothedMapHeading == null) __navSmoothedMapHeading = cogDeg;
+        else __navSmoothedMapHeading = lerpBearingToward_(__navSmoothedMapHeading, cogDeg, NAV_MAP_HEADING_SMOOTH);
+      }
+      const statusMsg = getNavOverlayStatus_(distM, __navSmoothedMapHeading != null);
+
+      if (map) {
+        map.setHeading(__navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0);
+      }
+
+      updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng }, __navSmoothedMapHeading);
       
       // SKAPA/UPPDATERA OVERLAY
       let infoDiv = document.getElementById('nav-overlay');
@@ -3817,24 +3809,8 @@ function startInternalNav(locId) {
       }
       map.fitBounds(bounds, 80);
 
-      if (map) {
-        if (isNavHeadingReliable_(distM, speedMs, __navOdometerM)) {
-          const cogDeg = resolveCourseOverGroundDeg_(pos, userPos, prevLatForCog, prevLngForCog, speedMs);
-          if (cogDeg != null) {
-            if (__navSmoothedMapHeading == null) __navSmoothedMapHeading = cogDeg;
-            else __navSmoothedMapHeading = lerpBearingToward_(__navSmoothedMapHeading, cogDeg, NAV_MAP_HEADING_SMOOTH);
-            map.setHeading(__navSmoothedMapHeading);
-          } else if (__navSmoothedMapHeading != null) {
-            map.setHeading(__navSmoothedMapHeading);
-          }
-        } else {
-          if (__navSmoothedMapHeading != null) {
-            map.setHeading(__navSmoothedMapHeading);
-          } else {
-            map.setHeading(0);
-          }
-        }
-      }
+      __navPrevLat = userPos.lat;
+      __navPrevLng = userPos.lng;
 
     }, null, { enableHighAccuracy: true });
   }
@@ -3880,20 +3856,21 @@ function lerpBearingToward_(fromDeg, toDeg, t) {
  * 2) coords.heading om den finns och hastighet > tröskel (sekundär)
  */
 function resolveCourseOverGroundDeg_(pos, userPos, prevLat, prevLng, speedMs) {
-  const STEP_MIN_M = 0.35;
+  const STEP_MIN_M = 0.22;
   const SPEED_FOR_HEADING_API = 0.25;
   if (prevLat != null && prevLng != null) {
     const stepM = haversineMeters(prevLat, prevLng, userPos.lat, userPos.lng);
-    if (stepM >= STEP_MIN_M) {
+    if (stepM >= STEP_MIN_M && stepM < 200) {
       return bearingDeg(prevLat, prevLng, userPos.lat, userPos.lng);
     }
   }
   const hd = pos.coords.heading;
   if (
     hd != null &&
-    !isNaN(hd) &&
+    Number.isFinite(hd) &&
+    !Number.isNaN(hd) &&
     speedMs != null &&
-    !isNaN(speedMs) &&
+    Number.isFinite(speedMs) &&
     speedMs >= SPEED_FOR_HEADING_API
   ) {
     return ((hd % 360) + 360) % 360;
@@ -3935,16 +3912,16 @@ function removeNavApproachPolyline() {
 }
 
 /**
- * Rak geodesisk linje till crag + tunn halv-sträcka med pil längs GPS-bäring (user → mål).
+ * Rak geodesisk linje till crag + tunn halv-sträcka med pil längs färdriktning (COG), ej mot crag.
+ * @param {number|null|undefined} cogDegSmoothed — mjukad kurs över mark (grader); saknas → ingen pil.
  */
-function updateNavApproachPolyline(userPos, targetPos) {
+function updateNavApproachPolyline(userPos, targetPos, cogDegSmoothed) {
   if (!map || !userPos || !targetPos) return;
   const chord = haversineMeters(userPos.lat, userPos.lng, targetPos.lat, targetPos.lng);
   if (chord < 3) {
     removeNavApproachPolyline();
     return;
   }
-  const brg = bearingDeg(userPos.lat, userPos.lng, targetPos.lat, targetPos.lng);
   const pathStraight = [userPos, targetPos];
 
   if (!navApproachPolyline) {
@@ -3962,8 +3939,15 @@ function updateNavApproachPolyline(userPos, targetPos) {
     navApproachPolyline.setMap(map);
   }
 
+  if (cogDegSmoothed == null || isNaN(cogDegSmoothed)) {
+    if (navHeadingArrowPolyline) {
+      navHeadingArrowPolyline.setMap(null);
+    }
+    return;
+  }
+
   const halfM = chord * 0.5;
-  const halfPoint = destinationPointLatLng(userPos.lat, userPos.lng, brg, halfM);
+  const halfPoint = destinationPointLatLng(userPos.lat, userPos.lng, cogDegSmoothed, halfM);
   const headingPath = [userPos, halfPoint];
 
   if (!navHeadingArrowPolyline) {
@@ -4015,13 +3999,16 @@ function stopNav() {
   removeNavApproachPolyline();
   __navPrevLat = null;
   __navPrevLng = null;
-  __navOdometerM = 0;
   __navSmoothedMapHeading = null;
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
-  markers.forEach(function (m) {
-    m.map = map;
-  });
+  if (typeof filterData === "function") {
+    filterData();
+  } else if (markers && markers.length > 0) {
+    markers.forEach(function (m) {
+      m.map = map;
+    });
+  }
   if (map) {
     map.setHeading(0);
     map.setZoom(11);
