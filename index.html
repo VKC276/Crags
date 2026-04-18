@@ -3663,6 +3663,9 @@ let __navStartedAt = 0;
 let __navPrevLat = null;
 let __navPrevLng = null;
 let __navOdometerM = 0;
+/** Mjukad kart-heading (grader) — följer färdriktning (COG), inte linjen mot crag. */
+let __navSmoothedMapHeading = null;
+const NAV_MAP_HEADING_SMOOTH = 0.22;
 
 // Globala variabler för position
 window.targetLat = null;
@@ -3672,15 +3675,21 @@ window.lastUserLng = null;
 /** Parkering { lat, lng } för fitBounds medan nav körs (sätts om koordinater finns) */
 window._navParkingPos = null;
 
+/** Tillräcklig rörelse för "Heading in map"; annars "Start walking" och kartan behåller senast kända heading. */
+function isNavHeadingReliable_(distM, speedMs, odometerM) {
+  if (distM == null || isNaN(distM) || distM < 3) return false;
+  const SPEED_OK = 0.4;
+  const ODOM_OK = 12;
+  return (
+    (speedMs != null && !isNaN(speedMs) && speedMs >= SPEED_OK) ||
+    (odometerM != null && !isNaN(odometerM) && odometerM >= ODOM_OK)
+  );
+}
+
 /** Kort status: "Heading in map" först när vi har tillräcklig rörelse för stabil GPS-bäring. */
 function getNavOverlayStatus_(distM, speedMs, odometerM) {
   if (distM == null || isNaN(distM) || distM < 3) return "Calculating heading";
-  const SPEED_OK = 0.4;
-  const ODOM_OK = 12;
-  const moving =
-    (speedMs != null && !isNaN(speedMs) && speedMs >= SPEED_OK) ||
-    (odometerM != null && !isNaN(odometerM) && odometerM >= ODOM_OK);
-  if (!moving) return "Start walking";
+  if (!isNavHeadingReliable_(distM, speedMs, odometerM)) return "Start walking";
   return "Heading in map";
 }
 
@@ -3730,6 +3739,7 @@ function startInternalNav(locId) {
   __navPrevLat = null;
   __navPrevLng = null;
   __navOdometerM = 0;
+  __navSmoothedMapHeading = null;
   removeNavApproachPolyline();
 
   addApproachParkingMarkerIfAny(loc);
@@ -3747,6 +3757,8 @@ function startInternalNav(locId) {
       window.lastUserLng = pos.coords.longitude;
       
       const userPos = { lat: window.lastUserLat, lng: window.lastUserLng };
+      const prevLatForCog = __navPrevLat;
+      const prevLngForCog = __navPrevLng;
 
       // Uppdatera blå prick
       if (!userMarker) {
@@ -3805,6 +3817,25 @@ function startInternalNav(locId) {
       }
       map.fitBounds(bounds, 80);
 
+      if (map) {
+        if (isNavHeadingReliable_(distM, speedMs, __navOdometerM)) {
+          const cogDeg = resolveCourseOverGroundDeg_(pos, userPos, prevLatForCog, prevLngForCog, speedMs);
+          if (cogDeg != null) {
+            if (__navSmoothedMapHeading == null) __navSmoothedMapHeading = cogDeg;
+            else __navSmoothedMapHeading = lerpBearingToward_(__navSmoothedMapHeading, cogDeg, NAV_MAP_HEADING_SMOOTH);
+            map.setHeading(__navSmoothedMapHeading);
+          } else if (__navSmoothedMapHeading != null) {
+            map.setHeading(__navSmoothedMapHeading);
+          }
+        } else {
+          if (__navSmoothedMapHeading != null) {
+            map.setHeading(__navSmoothedMapHeading);
+          } else {
+            map.setHeading(0);
+          }
+        }
+      }
+
     }, null, { enableHighAccuracy: true });
   }
 }
@@ -3831,6 +3862,43 @@ function bearingDeg(lat1, lng1, lat2, lng2) {
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Kortaste vägen mellan vinklar (grader), för mjuk map.setHeading. */
+function lerpBearingToward_(fromDeg, toDeg, t) {
+  let d = toDeg - fromDeg;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  let v = fromDeg + d * t;
+  v = ((v % 360) + 360) % 360;
+  return v;
+}
+
+/**
+ * Kurs över mark (färdriktning), inte bäring mot mål — så kartan följer hur du rör dig.
+ * 1) Rörelsevektor föregående → nuvarande position (primär)
+ * 2) coords.heading om den finns och hastighet > tröskel (sekundär)
+ */
+function resolveCourseOverGroundDeg_(pos, userPos, prevLat, prevLng, speedMs) {
+  const STEP_MIN_M = 0.35;
+  const SPEED_FOR_HEADING_API = 0.25;
+  if (prevLat != null && prevLng != null) {
+    const stepM = haversineMeters(prevLat, prevLng, userPos.lat, userPos.lng);
+    if (stepM >= STEP_MIN_M) {
+      return bearingDeg(prevLat, prevLng, userPos.lat, userPos.lng);
+    }
+  }
+  const hd = pos.coords.heading;
+  if (
+    hd != null &&
+    !isNaN(hd) &&
+    speedMs != null &&
+    !isNaN(speedMs) &&
+    speedMs >= SPEED_FOR_HEADING_API
+  ) {
+    return ((hd % 360) + 360) % 360;
+  }
+  return null;
 }
 
 /** Punkt på sfären: gå distM meter längs bearing (grader från nord, medurs). */
@@ -3948,12 +4016,16 @@ function stopNav() {
   __navPrevLat = null;
   __navPrevLng = null;
   __navOdometerM = 0;
+  __navSmoothedMapHeading = null;
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
   markers.forEach(function (m) {
     m.map = map;
   });
-  if (map) map.setZoom(11);
+  if (map) {
+    map.setHeading(0);
+    map.setZoom(11);
+  }
 }
 
 // I Index.html (script-delen)
