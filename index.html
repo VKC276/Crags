@@ -173,6 +173,32 @@
     body.crag-panel-open #app-public .floating-search-wrapper {
       display: none;
     }
+    /* Approach-nav: göm sök så nav-baren kan ligga högre */
+    body.approach-nav-active #app-public .floating-search-wrapper {
+      display: none !important;
+    }
+    .nav-approach-overlay {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #333;
+      padding: 10px 20px;
+      border-radius: 50px;
+      z-index: 2120;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      width: 90%;
+      max-width: 350px;
+      justify-content: space-between;
+    }
     body.crag-panel-open #panel {
       top: env(safe-area-inset-top, 0px);
       height: calc(100vh - env(safe-area-inset-top, 0px));
@@ -3687,8 +3713,7 @@ window.lastUserLng = null;
 window._navParkingPos = null;
 
 /**
- * "Heading in map" = färdriktning/COG fastställd (vi har __navSmoothedMapHeading).
- * "Start walking" = väntar på första giltiga COG (t.ex. rörelse mellan GPS-punkter).
+ * "Start walking" endast innan vi fått någon heading (COG) alls — därefter bara "Heading in map" / "Calculating heading".
  */
 function getNavOverlayStatus_(distM, hasCogEstablished) {
   if (distM == null || isNaN(distM) || distM < 3) return "Calculating heading";
@@ -3753,6 +3778,8 @@ function startInternalNav(locId) {
   window.targetLat = Number(loc.Lat_Sektor);
   window.targetLng = Number(loc.Lng_Sektor);
 
+  document.body.classList.add("approach-nav-active");
+
   __navPrevLat = null;
   __navPrevLng = null;
   __navSmoothedMapHeading = null;
@@ -3809,7 +3836,7 @@ function startInternalNav(locId) {
       if(!infoDiv) {
         infoDiv = document.createElement('div');
         infoDiv.id = 'nav-overlay';
-        infoDiv.style.cssText = "position:fixed;top:calc(var(--search-stack-height) + 10px);left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#333;padding:10px 20px;border-radius:50px;z-index:2000;font-weight:bold;display:flex;align-items:center;gap:15px;box-shadow:0 8px 25px rgba(0,0,0,0.15);border:1px solid rgba(0,0,0,0.1);width:90%;max-width:350px;justify-content:space-between;";
+        infoDiv.className = 'nav-approach-overlay';
         document.body.appendChild(infoDiv);
       }
 
@@ -4029,6 +4056,7 @@ function stopNav() {
   __navSmoothedMapHeading = null;
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
+  document.body.classList.remove("approach-nav-active");
   if (typeof filterData === "function") {
     filterData();
   } else if (markers && markers.length > 0) {
