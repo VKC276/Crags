@@ -33,17 +33,6 @@
     body { font-family: -apple-system, sans-serif; background: #f8f9fa; height: 100%; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
     .scroll-area { flex-grow: 1; overflow-y: auto; position: relative; height: 100%; }
     #view-map { position: relative; overflow: hidden; height: 100%; width: 100%; }
-    /* Större yta så hörn inte blir tomma vid CSS-rotation (ingen map.setHeading krävs). */
-    #map-rotate-wrap {
-      position: absolute;
-      left: -22%;
-      top: -22%;
-      width: 144%;
-      height: 144%;
-      transform-origin: 50% 50%;
-      transition: transform 0.12s linear;
-      will-change: transform;
-    }
     #map-canvas { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background: #eee; touch-action: none; }
     
     /* NYTT: SVÄVANDE SÖKFÄLT — fixed = följer viewport (Android Chrome m.m.), inte bara #app-public */
@@ -573,9 +562,7 @@
   </div>
 
   <div id="view-map">
-    <div id="map-rotate-wrap" aria-hidden="true">
-      <div id="map-canvas" style="height: 100%;"></div>
-    </div>
+    <div id="map-canvas" style="height: 100%;"></div>
   </div>
   
   <div id="view-list" style="display: none; height: 100%; overflow-y: auto; background: #f8f9fa;">
@@ -3721,21 +3708,6 @@ function getNavOverlayStatus_(distM, hasCogEstablished) {
   return "Heading in map";
 }
 
-/**
- * Roterar kartlagret med CSS på #map-rotate-wrap (ingen Maps API).
- * COG i grader medurs från nord — "framåt" hamnar uppåt skärmen.
- */
-function setNavMapRotationCss_(deg) {
-  var w = document.getElementById("map-rotate-wrap");
-  if (!w) return;
-  if (deg == null || (typeof deg === "number" && isNaN(deg))) {
-    w.style.transform = "";
-    return;
-  }
-  var d = ((Number(deg) % 360) + 360) % 360;
-  w.style.transform = "rotate(" + -d + "deg)";
-}
-
 function removeApproachParkingMarker() {
   if (approachParkingMarker) {
     approachParkingMarker.map = null;
@@ -3783,7 +3755,9 @@ function startInternalNav(locId) {
   __navPrevLat = null;
   __navPrevLng = null;
   __navSmoothedMapHeading = null;
-  setNavMapRotationCss_(null);
+  if (map && typeof map.setHeading === "function") {
+    map.setHeading(0);
+  }
   removeNavApproachPolyline();
 
   addApproachParkingMarkerIfAny(loc);
@@ -3827,7 +3801,9 @@ function startInternalNav(locId) {
       }
       const statusMsg = getNavOverlayStatus_(distM, __navSmoothedMapHeading != null);
 
-      setNavMapRotationCss_(__navSmoothedMapHeading);
+      if (map && typeof map.setHeading === "function") {
+        map.setHeading(__navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0);
+      }
 
       updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng }, __navSmoothedMapHeading);
       
@@ -3894,7 +3870,7 @@ function bearingDeg(lat1, lng1, lat2, lng2) {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-/** Kortaste vägen mellan vinklar (grader), för mjuk COG / setNavMapRotationCss_. */
+/** Kortaste vägen mellan vinklar (grader), för mjuk COG / map.setHeading. */
 function lerpBearingToward_(fromDeg, toDeg, t) {
   let d = toDeg - fromDeg;
   if (d > 180) d -= 360;
@@ -4064,8 +4040,10 @@ function stopNav() {
       m.map = map;
     });
   }
-  setNavMapRotationCss_(null);
   if (map) {
+    if (typeof map.setHeading === "function") {
+      map.setHeading(0);
+    }
     map.setZoom(11);
   }
 }
