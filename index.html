@@ -3708,6 +3708,21 @@ function getNavOverlayStatus_(distM, hasCogEstablished) {
   return "Heading in map";
 }
 
+/**
+ * Rotation mot COG (WebGL/vector med mapId). fitBounds nollställer heading — kalla efter fitBounds och på idle.
+ */
+function applyApproachMapHeadingToMap_(headingDeg) {
+  if (!map) return;
+  var h = headingDeg == null || isNaN(headingDeg) ? 0 : ((Number(headingDeg) % 360) + 360) % 360;
+  try {
+    if (typeof map.moveCamera === "function") {
+      map.moveCamera({ heading: h, tilt: 0 });
+    } else if (typeof map.setHeading === "function") {
+      map.setHeading(h);
+    }
+  } catch (e) {}
+}
+
 function removeApproachParkingMarker() {
   if (approachParkingMarker) {
     approachParkingMarker.map = null;
@@ -3755,9 +3770,7 @@ function startInternalNav(locId) {
   __navPrevLat = null;
   __navPrevLng = null;
   __navSmoothedMapHeading = null;
-  if (map && typeof map.setHeading === "function") {
-    map.setHeading(0);
-  }
+  applyApproachMapHeadingToMap_(0);
   removeNavApproachPolyline();
 
   addApproachParkingMarkerIfAny(loc);
@@ -3801,10 +3814,6 @@ function startInternalNav(locId) {
       }
       const statusMsg = getNavOverlayStatus_(distM, __navSmoothedMapHeading != null);
 
-      if (map && typeof map.setHeading === "function") {
-        map.setHeading(__navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0);
-      }
-
       updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng }, __navSmoothedMapHeading);
       
       // SKAPA/UPPDATERA OVERLAY
@@ -3838,6 +3847,19 @@ function startInternalNav(locId) {
         bounds.extend(window._navParkingPos);
       }
       map.fitBounds(bounds, 80);
+
+      (function applyHeadingAfterBounds_() {
+        var headTarget = __navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0;
+        function applyOnce() {
+          applyApproachMapHeadingToMap_(headTarget);
+        }
+        applyOnce();
+        if (window.google && google.maps && google.maps.event) {
+          google.maps.event.addListenerOnce(map, "idle", applyOnce);
+        } else {
+          setTimeout(applyOnce, 0);
+        }
+      })();
 
       __navPrevLat = userPos.lat;
       __navPrevLng = userPos.lng;
@@ -4041,9 +4063,7 @@ function stopNav() {
     });
   }
   if (map) {
-    if (typeof map.setHeading === "function") {
-      map.setHeading(0);
-    }
+    applyApproachMapHeadingToMap_(0);
     map.setZoom(11);
   }
 }
