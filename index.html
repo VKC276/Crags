@@ -3648,22 +3648,21 @@ function saveNewLocAction() {
 
 
 
-let currentHeading = 0;
-let smoothedHeading = 0;
-const filterFactor = 0.1; // Ju lägre, desto lugnare pil (0.05 - 0.2)
 let watchId = null;
 let userMarker = null;
 /** Advanced marker för parkering (P) under approach-navigering */
 let approachParkingMarker = null;
 
-/** Linje användare → crag (böjd vid avvikelse mot GPS-kurs) */
+/** Rak linje användare → crag */
 let navApproachPolyline = null;
-let navCourseAnchor = null;
-let navSmoothedCog = null;
-const NAV_MIN_LEG_M = 5;
-const NAV_COURSE_LERP = 0.22;
-const NAV_STRAIGHT_DEG = 6;
-const NAV_BEZIER_SEGMENTS = 40;
+/** Tunn linje till halva sträckan med pil — bäring från GPS (user → crag) */
+let navHeadingArrowPolyline = null;
+
+let __navStartedAt = 0;
+/** Föregående position under nav — för ackumulerad rörelse så heading på kartan blir pålitlig. */
+let __navPrevLat = null;
+let __navPrevLng = null;
+let __navOdometerM = 0;
 
 // Globala variabler för position
 window.targetLat = null;
@@ -3672,6 +3671,18 @@ window.lastUserLat = null;
 window.lastUserLng = null;
 /** Parkering { lat, lng } för fitBounds medan nav körs (sätts om koordinater finns) */
 window._navParkingPos = null;
+
+/** Kort status: "Heading in map" först när vi har tillräcklig rörelse för stabil GPS-bäring. */
+function getNavOverlayStatus_(distM, speedMs, odometerM) {
+  if (distM == null || isNaN(distM) || distM < 3) return "Calculating heading";
+  const SPEED_OK = 0.4;
+  const ODOM_OK = 12;
+  const moving =
+    (speedMs != null && !isNaN(speedMs) && speedMs >= SPEED_OK) ||
+    (odometerM != null && !isNaN(odometerM) && odometerM >= ODOM_OK);
+  if (!moving) return "Start walking";
+  return "Heading in map";
+}
 
 function removeApproachParkingMarker() {
   if (approachParkingMarker) {
@@ -3715,23 +3726,16 @@ function startInternalNav(locId) {
   window.targetLat = Number(loc.Lat_Sektor);
   window.targetLng = Number(loc.Lng_Sektor);
 
-  navCourseAnchor = null;
-  navSmoothedCog = null;
+  __navStartedAt = Date.now();
+  __navPrevLat = null;
+  __navPrevLng = null;
+  __navOdometerM = 0;
   removeNavApproachPolyline();
 
   addApproachParkingMarkerIfAny(loc);
 
   closePanel();
   switchView('map');
-
-  // iOS behörighet för kompass
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().catch(console.error);
-  }
-
-  // Kompass-lyssnare
-  window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-  window.addEventListener('deviceorientation', handleOrientation, true);
 
   // Rensa andra markörer
   markers.forEach(m => m.setMap((m.title === loc.Namn) ? map : null));
@@ -3756,9 +3760,17 @@ function startInternalNav(locId) {
         userMarker.setMap(map);
       }
 
+      const distM = haversineMeters(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
       const dist = haversineDistance(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
+      const speedMs = pos.coords.speed;
+      if (__navPrevLat != null && __navPrevLng != null) {
+        const stepM = haversineMeters(__navPrevLat, __navPrevLng, userPos.lat, userPos.lng);
+        if (stepM > 0.25 && stepM < 120) __navOdometerM += stepM;
+      }
+      __navPrevLat = userPos.lat;
+      __navPrevLng = userPos.lng;
+      const statusMsg = getNavOverlayStatus_(distM, speedMs, __navOdometerM);
 
-      updateNavCourseFromMovement(userPos);
       updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng });
       
       // SKAPA/UPPDATERA OVERLAY
@@ -3772,25 +3784,18 @@ function startInternalNav(locId) {
 
       var satLabel = window.__usingSatelliteLayer ? "Karta" : "Satellit";
       infoDiv.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div id="compass-circle" style="width: 50px; height: 50px; background: #0d6efd; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4); transition: transform 0.1s linear;">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="19" x2="12" y2="5"></line>
-              <polyline points="5 12 12 5 19 12"></polyline>
-            </svg>
-          </div>
-          <div style="display:flex; flex-direction:column;">
-            <span style="font-size:0.7rem; color:#666; text-transform:uppercase; letter-spacing:1px;">${loc.Namn}</span>
-            <span style="font-size:1.3rem; color:#333; font-weight:900;">${dist}</span>
+        <div style="display:flex; flex-direction:column; flex:1; min-width:0; gap:4px;">
+          <span style="font-size:0.7rem; color:#666; text-transform:uppercase; letter-spacing:1px;">${loc.Namn}</span>
+          <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
+            <span id="nav-overlay-dist" style="font-size:1.3rem; color:#333; font-weight:900; white-space:nowrap;">${dist}</span>
+            <span id="nav-overlay-status" style="font-size:0.8rem; color:#555; font-weight:600; text-align:right; line-height:1.25;">${statusMsg}</span>
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
           <button type="button" id="nav-sat-toggle" onclick="toggleMainMapSatellite();" style="border:none; background:#e7f1ff; color:#0d6efd; border-radius:20px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;">${satLabel}</button>
           <button type="button" onclick="stopNav()" style="border:none; background:#eee; color:#444; border-radius:50%; width:30px; height:30px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
         </div>
       `;
-      
-      updateCompassRotation();
 
       const bounds = new google.maps.LatLngBounds();
       bounds.extend(userPos);
@@ -3802,46 +3807,6 @@ function startInternalNav(locId) {
 
     }, null, { enableHighAccuracy: true });
   }
-}
-
-// FILTER-FUNKTION FÖR MJUKARE KOMPASS
-function handleOrientation(e) {
-  let rawHeading = 0;
-  if (e.webkitCompassHeading) {
-    rawHeading = e.webkitCompassHeading;
-  } else {
-    rawHeading = 360 - e.alpha; 
-  }
-
-  // Hantera hoppet vid 360 grader
-  let diff = rawHeading - smoothedHeading;
-  if (diff > 180) diff -= 360;
-  if (diff < -180) diff += 360;
-
-  smoothedHeading += diff * filterFactor;
-  smoothedHeading = (smoothedHeading + 360) % 360;
-
-  updateCompassRotation();
-}
-
-function updateCompassRotation() {
-  const compassCircle = document.getElementById('compass-circle');
-  if (!compassCircle || !window.lastUserLat || !window.targetLat) return;
-
-  const toRad = (v) => v * Math.PI / 180;
-  const toDeg = (v) => v * 180 / Math.PI;
-
-  const lat1 = toRad(window.lastUserLat);
-  const lat2 = toRad(window.targetLat);
-  const dLng = toRad(window.targetLng - window.lastUserLng);
-
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  let bearing = (toDeg(Math.atan2(y, x)) + 360) % 360;
-
-  var headingRef = navSmoothedCog != null ? navSmoothedCog : smoothedHeading;
-  let visualRotation = bearing - headingRef;
-  compassCircle.style.transform = `rotate(${visualRotation}deg)`;
 }
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -3868,18 +3833,6 @@ function bearingDeg(lat1, lng1, lat2, lng2) {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-function normalizeAngleDeg(a) {
-  let x = a % 360;
-  if (x > 180) x -= 360;
-  if (x < -180) x += 360;
-  return x;
-}
-
-function lerpAngleDeg(from, to, t) {
-  const d = normalizeAngleDeg(to - from);
-  return normalizeAngleDeg(from + d * t);
-}
-
 /** Punkt på sfären: gå distM meter längs bearing (grader från nord, medurs). */
 function destinationPointLatLng(lat, lng, bearingDegVal, distM) {
   const R = 6371000;
@@ -3902,41 +3855,19 @@ function destinationPointLatLng(lat, lng, bearingDegVal, distM) {
   };
 }
 
-function quadBezierLatLng(p0, p1, p2, nSeg) {
-  const out = [];
-  for (let i = 0; i <= nSeg; i++) {
-    const t = i / nSeg;
-    const mt = 1 - t;
-    const lat = mt * mt * p0.lat + 2 * mt * t * p1.lat + t * t * p2.lat;
-    const lng = mt * mt * p0.lng + 2 * mt * t * p1.lng + t * t * p2.lng;
-    out.push({ lat: lat, lng: lng });
-  }
-  return out;
-}
-
 function removeNavApproachPolyline() {
   if (navApproachPolyline) {
     navApproachPolyline.setMap(null);
     navApproachPolyline = null;
   }
-}
-
-function updateNavCourseFromMovement(userPos) {
-  if (!navCourseAnchor) {
-    navCourseAnchor = { lat: userPos.lat, lng: userPos.lng };
-    return;
-  }
-  const dm = haversineMeters(navCourseAnchor.lat, navCourseAnchor.lng, userPos.lat, userPos.lng);
-  if (dm >= NAV_MIN_LEG_M) {
-    const leg = bearingDeg(navCourseAnchor.lat, navCourseAnchor.lng, userPos.lat, userPos.lng);
-    navSmoothedCog = navSmoothedCog == null ? leg : lerpAngleDeg(navSmoothedCog, leg, NAV_COURSE_LERP);
-    navCourseAnchor = { lat: userPos.lat, lng: userPos.lng };
+  if (navHeadingArrowPolyline) {
+    navHeadingArrowPolyline.setMap(null);
+    navHeadingArrowPolyline = null;
   }
 }
 
 /**
- * Rak linje när kurs ≈ bäring till mål; annars kvadratisk Bezier med bul åt sidan du färdas
- * (delta = kurs − bäring: positiv ⇒ bulge åt höger om linjen “framåt”).
+ * Rak geodesisk linje till crag + tunn halv-sträcka med pil längs GPS-bäring (user → mål).
  */
 function updateNavApproachPolyline(userPos, targetPos) {
   if (!map || !userPos || !targetPos) return;
@@ -3946,37 +3877,53 @@ function updateNavApproachPolyline(userPos, targetPos) {
     return;
   }
   const brg = bearingDeg(userPos.lat, userPos.lng, targetPos.lat, targetPos.lng);
-  let path;
-  const cog = navSmoothedCog;
-  if (cog == null) {
-    path = [userPos, targetPos];
-  } else {
-    const delta = normalizeAngleDeg(cog - brg);
-    if (Math.abs(delta) < NAV_STRAIGHT_DEG) {
-      path = [userPos, targetPos];
-    } else {
-      const midLat = (userPos.lat + targetPos.lat) / 2;
-      const midLng = (userPos.lng + targetPos.lng) / 2;
-      const perpBearing = brg + (delta >= 0 ? 90 : -90);
-      const rad = (Math.min(Math.abs(delta), 85) * Math.PI) / 180;
-      const bulgeM = Math.min(chord * 0.45 * Math.sin(rad), chord * 0.48);
-      const p1 = destinationPointLatLng(midLat, midLng, perpBearing, bulgeM);
-      path = quadBezierLatLng(userPos, p1, targetPos, NAV_BEZIER_SEGMENTS);
-    }
-  }
+  const pathStraight = [userPos, targetPos];
+
   if (!navApproachPolyline) {
     navApproachPolyline = new google.maps.Polyline({
-      path: path,
+      path: pathStraight,
       map: map,
-      geodesic: false,
+      geodesic: true,
       strokeColor: "#0d6efd",
-      strokeOpacity: 0.92,
-      strokeWeight: 5,
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
       zIndex: 880
     });
   } else {
-    navApproachPolyline.setPath(path);
+    navApproachPolyline.setPath(pathStraight);
     navApproachPolyline.setMap(map);
+  }
+
+  const halfM = chord * 0.5;
+  const halfPoint = destinationPointLatLng(userPos.lat, userPos.lng, brg, halfM);
+  const headingPath = [userPos, halfPoint];
+
+  if (!navHeadingArrowPolyline) {
+    navHeadingArrowPolyline = new google.maps.Polyline({
+      path: headingPath,
+      map: map,
+      geodesic: true,
+      strokeColor: "#0d6efd",
+      strokeOpacity: 0.95,
+      strokeWeight: 2,
+      zIndex: 881,
+      icons: [
+        {
+          icon: {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            scale: 2.5,
+            strokeWeight: 1,
+            strokeColor: "#0d6efd",
+            fillColor: "#0d6efd",
+            fillOpacity: 1
+          },
+          offset: "100%"
+        }
+      ]
+    });
+  } else {
+    navHeadingArrowPolyline.setPath(headingPath);
+    navHeadingArrowPolyline.setMap(map);
   }
 }
 
@@ -3991,8 +3938,6 @@ function stopNav() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  window.removeEventListener("deviceorientationabsolute", handleOrientation, true);
-  window.removeEventListener("deviceorientation", handleOrientation, true);
   if (userMarker) {
     userMarker.setMap(null);
     userMarker = null;
@@ -4000,8 +3945,9 @@ function stopNav() {
   window._navParkingPos = null;
   removeApproachParkingMarker();
   removeNavApproachPolyline();
-  navCourseAnchor = null;
-  navSmoothedCog = null;
+  __navPrevLat = null;
+  __navPrevLng = null;
+  __navOdometerM = 0;
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
   markers.forEach(function (m) {
