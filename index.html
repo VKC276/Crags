@@ -1022,7 +1022,7 @@ function initMap() {
     zoom: 9, 
     center: vastervik, 
     mapId: "4504f8b373a348fd",
-    mapTypeId: 'terrain',
+    mapTypeId: "roadmap",
     disableDefaultUI: isMobile, 
     gestureHandling: 'greedy',
     mapTypeControl: false,
@@ -1032,7 +1032,7 @@ function initMap() {
     zoomControl: false
   });
   map.setOptions({ gestureHandling: 'greedy' });
-  window.__mapTypeBeforeSatellite = 'terrain';
+  window.__mapTypeBeforeSatellite = "roadmap";
   window.__usingSatelliteLayer = false;
   syncSatelliteToggleUi();
 
@@ -1173,13 +1173,13 @@ function syncSatelliteToggleUi() {
 function toggleMainMapSatellite() {
   if (!map || typeof map.setMapTypeId !== 'function') return;
   if (window.__usingSatelliteLayer) {
-    map.setMapTypeId(window.__mapTypeBeforeSatellite || 'terrain');
+    map.setMapTypeId(window.__mapTypeBeforeSatellite || "roadmap");
     window.__usingSatelliteLayer = false;
   } else {
     try {
-      window.__mapTypeBeforeSatellite = map.getMapTypeId && map.getMapTypeId() ? map.getMapTypeId() : 'terrain';
+      window.__mapTypeBeforeSatellite = map.getMapTypeId && map.getMapTypeId() ? map.getMapTypeId() : "roadmap";
     } catch (e) {
-      window.__mapTypeBeforeSatellite = 'terrain';
+      window.__mapTypeBeforeSatellite = "roadmap";
     }
     map.setMapTypeId('hybrid');
     window.__usingSatelliteLayer = true;
@@ -3698,14 +3698,16 @@ window.lastUserLat = null;
 window.lastUserLng = null;
 /** Parkering { lat, lng } för fitBounds medan nav körs (sätts om koordinater finns) */
 window._navParkingPos = null;
+/** fitBounds varje tick nollställer heading — kör initial ram, sedan panTo. */
+let __navDidInitialBoundsFit = false;
 
 /**
- * "Start walking" endast innan vi fått någon heading (COG) alls — därefter bara "Heading in map" / "Calculating heading".
+ * Informativ text bara när användaren måste gå för att få COG — ingen text när heading redan finns.
  */
 function getNavOverlayStatus_(distM, hasCogEstablished) {
-  if (distM == null || isNaN(distM) || distM < 3) return "Calculating heading";
+  if (distM == null || isNaN(distM) || distM < 3) return null;
   if (!hasCogEstablished) return "Start walking";
-  return "Heading in map";
+  return null;
 }
 
 /**
@@ -3770,6 +3772,7 @@ function startInternalNav(locId) {
   __navPrevLat = null;
   __navPrevLng = null;
   __navSmoothedMapHeading = null;
+  __navDidInitialBoundsFit = false;
   applyApproachMapHeadingToMap_(0);
   removeNavApproachPolyline();
 
@@ -3813,6 +3816,12 @@ function startInternalNav(locId) {
         else __navSmoothedMapHeading = lerpBearingToward_(__navSmoothedMapHeading, cogDeg, NAV_MAP_HEADING_SMOOTH);
       }
       const statusMsg = getNavOverlayStatus_(distM, __navSmoothedMapHeading != null);
+      var statusSpanHtml =
+        statusMsg != null && String(statusMsg).length > 0
+          ? '<span id="nav-overlay-status" style="font-size:0.8rem; color:#555; font-weight:600; text-align:right; line-height:1.25;">' +
+            statusMsg +
+            "</span>"
+          : "";
 
       updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng }, __navSmoothedMapHeading);
       
@@ -3831,7 +3840,7 @@ function startInternalNav(locId) {
           <span style="font-size:0.7rem; color:#666; text-transform:uppercase; letter-spacing:1px;">${loc.Namn}</span>
           <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
             <span id="nav-overlay-dist" style="font-size:1.3rem; color:#333; font-weight:900; white-space:nowrap;">${dist}</span>
-            <span id="nav-overlay-status" style="font-size:0.8rem; color:#555; font-weight:600; text-align:right; line-height:1.25;">${statusMsg}</span>
+            ${statusSpanHtml}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
@@ -3846,20 +3855,29 @@ function startInternalNav(locId) {
       if (window._navParkingPos) {
         bounds.extend(window._navParkingPos);
       }
-      map.fitBounds(bounds, 80);
 
-      (function applyHeadingAfterBounds_() {
-        var headTarget = __navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0;
-        function applyOnce() {
-          applyApproachMapHeadingToMap_(headTarget);
+      var headTarget = __navSmoothedMapHeading != null ? __navSmoothedMapHeading : 0;
+
+      if (!__navDidInitialBoundsFit) {
+        map.fitBounds(bounds, 80);
+        __navDidInitialBoundsFit = true;
+        (function applyHeadingAfterBounds_() {
+          function applyOnce() {
+            applyApproachMapHeadingToMap_(headTarget);
+          }
+          applyOnce();
+          if (window.google && google.maps && google.maps.event) {
+            google.maps.event.addListenerOnce(map, "idle", applyOnce);
+          } else {
+            setTimeout(applyOnce, 0);
+          }
+        })();
+      } else {
+        if (typeof map.panTo === "function") {
+          map.panTo(userPos);
         }
-        applyOnce();
-        if (window.google && google.maps && google.maps.event) {
-          google.maps.event.addListenerOnce(map, "idle", applyOnce);
-        } else {
-          setTimeout(applyOnce, 0);
-        }
-      })();
+        applyApproachMapHeadingToMap_(headTarget);
+      }
 
       __navPrevLat = userPos.lat;
       __navPrevLng = userPos.lng;
@@ -4055,6 +4073,7 @@ function stopNav() {
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
   document.body.classList.remove("approach-nav-active");
+  __navDidInitialBoundsFit = false;
   if (typeof filterData === "function") {
     filterData();
   } else if (markers && markers.length > 0) {
