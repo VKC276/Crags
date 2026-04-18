@@ -484,7 +484,7 @@
     <img src="https://lh3.googleusercontent.com/d/1zPi2uQydUsda-gASs09SLg7F0YhkZi5o=s400" 
          alt="ClimbR Logo" 
          style="max-width: 180px; height: auto; margin-bottom: 5px; animation: pulse 2s infinite ease-in-out;">
-    <div style="text-center margin-top: 5px;">
+    <div style="text-align: center; margin-top: 5px;">
         <div style="font-size: 1.85rem; letter-spacing: 1px; text-transform: uppercase; color: white;">Crags</div>
     </div>
 
@@ -3656,6 +3656,15 @@ let userMarker = null;
 /** Advanced marker för parkering (P) under approach-navigering */
 let approachParkingMarker = null;
 
+/** Linje användare → crag (böjd vid avvikelse mot GPS-kurs) */
+let navApproachPolyline = null;
+let navCourseAnchor = null;
+let navSmoothedCog = null;
+const NAV_MIN_LEG_M = 5;
+const NAV_COURSE_LERP = 0.22;
+const NAV_STRAIGHT_DEG = 6;
+const NAV_BEZIER_SEGMENTS = 40;
+
 // Globala variabler för position
 window.targetLat = null;
 window.targetLng = null;
@@ -3706,6 +3715,10 @@ function startInternalNav(locId) {
   window.targetLat = Number(loc.Lat_Sektor);
   window.targetLng = Number(loc.Lng_Sektor);
 
+  navCourseAnchor = null;
+  navSmoothedCog = null;
+  removeNavApproachPolyline();
+
   addApproachParkingMarkerIfAny(loc);
 
   closePanel();
@@ -3744,6 +3757,9 @@ function startInternalNav(locId) {
       }
 
       const dist = haversineDistance(window.lastUserLat, window.lastUserLng, window.targetLat, window.targetLng);
+
+      updateNavCourseFromMovement(userPos);
+      updateNavApproachPolyline(userPos, { lat: window.targetLat, lng: window.targetLng });
       
       // SKAPA/UPPDATERA OVERLAY
       let infoDiv = document.getElementById('nav-overlay');
@@ -3823,19 +3839,150 @@ function updateCompassRotation() {
   const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
   let bearing = (toDeg(Math.atan2(y, x)) + 360) % 360;
 
-  let visualRotation = (bearing - smoothedHeading);
+  var headingRef = navSmoothedCog != null ? navSmoothedCog : smoothedHeading;
+  let visualRotation = bearing - headingRef;
   compassCircle.style.transform = `rotate(${visualRotation}deg)`;
 }
 
-// Matte för avståndet
-function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const d = R * c;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function bearingDeg(lat1, lng1, lat2, lng2) {
+  const toRad = Math.PI / 180;
+  const φ1 = lat1 * toRad;
+  const φ2 = lat2 * toRad;
+  const Δλ = (lng2 - lng1) * toRad;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function normalizeAngleDeg(a) {
+  let x = a % 360;
+  if (x > 180) x -= 360;
+  if (x < -180) x += 360;
+  return x;
+}
+
+function lerpAngleDeg(from, to, t) {
+  const d = normalizeAngleDeg(to - from);
+  return normalizeAngleDeg(from + d * t);
+}
+
+/** Punkt på sfären: gå distM meter längs bearing (grader från nord, medurs). */
+function destinationPointLatLng(lat, lng, bearingDegVal, distM) {
+  const R = 6371000;
+  const δ = distM / R;
+  const θ = (bearingDegVal * Math.PI) / 180;
+  const φ1 = (lat * Math.PI) / 180;
+  const λ1 = (lng * Math.PI) / 180;
+  const sinφ1 = Math.sin(φ1);
+  const cosφ1 = Math.cos(φ1);
+  const sinδ = Math.sin(δ);
+  const cosδ = Math.cos(δ);
+  const sinφ2 = sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ);
+  const φ2 = Math.asin(sinφ2);
+  const y = Math.sin(θ) * sinδ * cosφ1;
+  const x = cosδ - sinφ1 * sinφ2;
+  const λ2 = λ1 + Math.atan2(y, x);
+  return {
+    lat: (φ2 * 180) / Math.PI,
+    lng: ((((λ2 * 180) / Math.PI + 540) % 360) - 180)
+  };
+}
+
+function quadBezierLatLng(p0, p1, p2, nSeg) {
+  const out = [];
+  for (let i = 0; i <= nSeg; i++) {
+    const t = i / nSeg;
+    const mt = 1 - t;
+    const lat = mt * mt * p0.lat + 2 * mt * t * p1.lat + t * t * p2.lat;
+    const lng = mt * mt * p0.lng + 2 * mt * t * p1.lng + t * t * p2.lng;
+    out.push({ lat: lat, lng: lng });
+  }
+  return out;
+}
+
+function removeNavApproachPolyline() {
+  if (navApproachPolyline) {
+    navApproachPolyline.setMap(null);
+    navApproachPolyline = null;
+  }
+}
+
+function updateNavCourseFromMovement(userPos) {
+  if (!navCourseAnchor) {
+    navCourseAnchor = { lat: userPos.lat, lng: userPos.lng };
+    return;
+  }
+  const dm = haversineMeters(navCourseAnchor.lat, navCourseAnchor.lng, userPos.lat, userPos.lng);
+  if (dm >= NAV_MIN_LEG_M) {
+    const leg = bearingDeg(navCourseAnchor.lat, navCourseAnchor.lng, userPos.lat, userPos.lng);
+    navSmoothedCog = navSmoothedCog == null ? leg : lerpAngleDeg(navSmoothedCog, leg, NAV_COURSE_LERP);
+    navCourseAnchor = { lat: userPos.lat, lng: userPos.lng };
+  }
+}
+
+/**
+ * Rak linje när kurs ≈ bäring till mål; annars kvadratisk Bezier med bul åt sidan du färdas
+ * (delta = kurs − bäring: positiv ⇒ bulge åt höger om linjen “framåt”).
+ */
+function updateNavApproachPolyline(userPos, targetPos) {
+  if (!map || !userPos || !targetPos) return;
+  const chord = haversineMeters(userPos.lat, userPos.lng, targetPos.lat, targetPos.lng);
+  if (chord < 3) {
+    removeNavApproachPolyline();
+    return;
+  }
+  const brg = bearingDeg(userPos.lat, userPos.lng, targetPos.lat, targetPos.lng);
+  let path;
+  const cog = navSmoothedCog;
+  if (cog == null) {
+    path = [userPos, targetPos];
+  } else {
+    const delta = normalizeAngleDeg(cog - brg);
+    if (Math.abs(delta) < NAV_STRAIGHT_DEG) {
+      path = [userPos, targetPos];
+    } else {
+      const midLat = (userPos.lat + targetPos.lat) / 2;
+      const midLng = (userPos.lng + targetPos.lng) / 2;
+      const perpBearing = brg + (delta >= 0 ? 90 : -90);
+      const rad = (Math.min(Math.abs(delta), 85) * Math.PI) / 180;
+      const bulgeM = Math.min(chord * 0.45 * Math.sin(rad), chord * 0.48);
+      const p1 = destinationPointLatLng(midLat, midLng, perpBearing, bulgeM);
+      path = quadBezierLatLng(userPos, p1, targetPos, NAV_BEZIER_SEGMENTS);
+    }
+  }
+  if (!navApproachPolyline) {
+    navApproachPolyline = new google.maps.Polyline({
+      path: path,
+      map: map,
+      geodesic: false,
+      strokeColor: "#0d6efd",
+      strokeOpacity: 0.92,
+      strokeWeight: 5,
+      zIndex: 880
+    });
+  } else {
+    navApproachPolyline.setPath(path);
+    navApproachPolyline.setMap(map);
+  }
+}
+
+// Matte för avståndet (visning)
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const d = haversineMeters(lat1, lon1, lat2, lon2) / 1000;
   return d < 1 ? Math.round(d * 1000) + " m" : d.toFixed(1) + " km";
 }
 
@@ -3852,6 +3999,9 @@ function stopNav() {
   }
   window._navParkingPos = null;
   removeApproachParkingMarker();
+  removeNavApproachPolyline();
+  navCourseAnchor = null;
+  navSmoothedCog = null;
   var overlay = document.getElementById("nav-overlay");
   if (overlay) overlay.remove();
   markers.forEach(function (m) {
